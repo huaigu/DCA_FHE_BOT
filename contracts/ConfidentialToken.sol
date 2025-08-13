@@ -118,6 +118,9 @@ contract ConfidentialToken is SepoliaConfig, Ownable, ReentrancyGuard {
             
             if (user == address(0)) revert InvalidAddress();
             
+            // Grant this contract permission to use the amount
+            FHE.allowThis(amount);
+            
             // Initialize balance if not already done
             if (!isBalanceInitialized[user]) {
                 euint64 encryptedZero = FHE.asEuint64(0);

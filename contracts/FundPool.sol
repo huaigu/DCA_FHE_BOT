@@ -122,18 +122,14 @@ contract FundPool is IFundPool, SepoliaConfig, Ownable, ReentrancyGuard {
     /// @notice Deposit USDC and record encrypted balance
     /// @param amountExt Encrypted amount to deposit
     /// @param amountProof Proof for the encrypted amount
+    /// @param plaintextAmount The plaintext amount for USDC transfer (temporary solution for testing)
     function deposit(
         externalEuint64 amountExt,
-        bytes calldata amountProof
+        bytes calldata amountProof,
+        uint256 plaintextAmount
     ) external override nonReentrant {
         // Convert external encrypted amount to internal
         euint64 encryptedAmount = FHE.fromExternal(amountExt, amountProof);
-        
-        // For the actual transfer, we need the plaintext amount
-        // In production, this would use a more sophisticated mechanism
-        // For now, we'll require the user to also provide the plaintext amount separately
-        // This is a simplification - in production, you'd use ZK proofs or oracle-based verification
-        uint256 plaintextAmount = _getPlaintextAmount(amountExt, amountProof);
         
         if (plaintextAmount == 0) revert InvalidAmount();
         
@@ -241,6 +237,9 @@ contract FundPool is IFundPool, SepoliaConfig, Ownable, ReentrancyGuard {
         
         euint64 currentBalance = encryptedBalances[user];
         
+        // Ensure BatchProcessor has access to the current balance
+        FHE.allow(currentBalance, msg.sender);
+        
         // Check if user has sufficient balance
         ebool hasSufficientBalance = FHE.ge(currentBalance, amount);
         
@@ -302,6 +301,9 @@ contract FundPool is IFundPool, SepoliaConfig, Ownable, ReentrancyGuard {
             amount := calldataload(add(amountProof.offset, 0))
         }
         
+        // Simplified: just ensure it's not zero and within reasonable bounds
+        if (amount == 0 || amount > 1e12) revert InvalidAmount(); // Max 1 million USDC (6 decimals)
+        
         return amount;
     }
     
@@ -311,5 +313,28 @@ contract FundPool is IFundPool, SepoliaConfig, Ownable, ReentrancyGuard {
     function recoverToken(address token, uint256 amount) external onlyOwner {
         if (token == address(0)) revert InvalidAddress();
         IERC20(token).transfer(owner(), amount);
+    }
+    
+    /// @notice Test function to initialize user balance (only for testing)
+    /// @dev This should only be used in test environments
+    function testInitializeBalance(address user, uint256 amount) external onlyOwner {
+        if (!isBalanceInitialized[user]) {
+            _initializeBalance(user);
+        }
+        
+        // Set balance directly for testing
+        euint64 encryptedAmount = FHE.asEuint64(uint64(amount));
+        encryptedBalances[user] = encryptedAmount;
+        
+        // Set permissions - ensure all relevant contracts have access
+        FHE.allowThis(encryptedAmount);
+        FHE.allow(encryptedAmount, user);
+        FHE.allow(encryptedAmount, address(this)); // Allow FundPool itself
+        if (batchProcessor != address(0)) {
+            FHE.allow(encryptedAmount, batchProcessor);
+        }
+        if (intentCollector != address(0)) {
+            FHE.allow(encryptedAmount, intentCollector);
+        }
     }
 }

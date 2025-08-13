@@ -9,7 +9,8 @@ interface IFundPool {
     /// @notice Deposit USDC and record encrypted balance
     /// @param amountExt Encrypted amount to deposit
     /// @param amountProof Proof for the encrypted amount
-    function deposit(externalEuint64 amountExt, bytes calldata amountProof) external;
+    /// @param plaintextAmount The plaintext amount for USDC transfer (temporary solution for testing)
+    function deposit(externalEuint64 amountExt, bytes calldata amountProof, uint256 plaintextAmount) external;
     
     /// @notice Withdraw USDC from encrypted balance
     /// @param amount Plain amount to withdraw (must match encrypted balance)
