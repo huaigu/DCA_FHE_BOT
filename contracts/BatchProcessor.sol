@@ -280,16 +280,26 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, Pausable, IC
         internal
         returns (uint256[] memory validIntentIds, euint64 totalAmount)
     {
-        uint256[] memory tempValidIds = new uint256[](intentIds.length);
+        // First, filter by user state to avoid unnecessary FHE operations
+        uint256[] memory activeIntentIds = intentCollector.filterActiveIntents(intentIds);
+        
+        uint256[] memory tempValidIds = new uint256[](activeIntentIds.length);
         uint256 validCount = 0;
         totalAmount = FHE.asEuint64(0);
         
         // Convert current price to euint64 for FHE comparison
         euint64 currentPriceEncrypted = FHE.asEuint64(uint64(currentPrice));
         
-        for (uint256 i = 0; i < intentIds.length; i++) {
-            uint256 intentId = intentIds[i];
+        // Only process intents from ACTIVE users
+        for (uint256 i = 0; i < activeIntentIds.length; i++) {
+            uint256 intentId = activeIntentIds[i];
             IntentCollector.EncryptedIntent memory intent = intentCollector.getIntent(intentId);
+            
+            // Skip if user is not ACTIVE (double-check)
+            IntentCollector.UserState userState = intentCollector.getUserState(intent.user);
+            if (userState != IntentCollector.UserState.ACTIVE) {
+                continue;
+            }
             
             // Check if intent should execute based on encrypted price conditions
             ebool shouldExecute = _shouldExecuteIntent(intent, currentPriceEncrypted);

@@ -11,6 +11,14 @@ import {IFundPool} from "./interfaces/IFundPool.sol";
 /// @notice Collects and manages encrypted DCA intents with privacy-preserving parameters
 /// @dev Uses Zama FHE to encrypt user DCA strategies including price conditions
 contract IntentCollector is SepoliaConfig, Ownable, ReentrancyGuard {
+    /// @notice User account states for efficient batch processing
+    enum UserState {
+        UNINITIALIZED, // User has not deposited yet
+        ACTIVE,        // User can submit intents and participate in batches
+        WITHDRAWING,   // User is in the process of withdrawing
+        WITHDRAWN      // User has withdrawn all funds
+    }
+    
     /// @notice Structure representing an encrypted DCA intent
     struct EncryptedIntent {
         euint64 budget;          // Total USDC budget for DCA
@@ -31,6 +39,9 @@ contract IntentCollector is SepoliaConfig, Ownable, ReentrancyGuard {
     
     /// @notice Mapping from user address to their intent IDs
     mapping(address => uint256[]) public userIntents;
+    
+    /// @notice Mapping from user address to their current state
+    mapping(address => UserState) public userStates;
     
     /// @notice Mapping from batch ID to intent IDs in that batch
     mapping(uint256 => uint256[]) public batchIntents;
@@ -83,6 +94,19 @@ contract IntentCollector is SepoliaConfig, Ownable, ReentrancyGuard {
     );
 
     event BatchProcessorUpdated(address indexed oldProcessor, address indexed newProcessor);
+    
+    event UserStateChanged(
+        address indexed user,
+        UserState oldState,
+        UserState newState,
+        uint256 timestamp
+    );
+    
+    event UserIntentsCancelled(
+        address indexed user,
+        uint256[] intentIds,
+        uint256 timestamp
+    );
 
     /// @notice Custom errors
     error InvalidBatchProcessor();
@@ -93,6 +117,8 @@ contract IntentCollector is SepoliaConfig, Ownable, ReentrancyGuard {
     error BatchNotReady();
     error InsufficientFundPoolBalance();
     error FundPoolNotSet();
+    error InvalidUserState();
+    error UserNotActive();
 
     /// @notice Constructor
     /// @param _owner Owner of the contract
@@ -137,6 +163,17 @@ contract IntentCollector is SepoliaConfig, Ownable, ReentrancyGuard {
     ) external nonReentrant returns (uint256 intentId) {
         // Check fund pool is set
         if (address(fundPool) == address(0)) revert FundPoolNotSet();
+        
+        // Check user state - must be ACTIVE to submit intents
+        if (userStates[msg.sender] != UserState.ACTIVE) {
+            // If UNINITIALIZED and has balance, activate
+            if (userStates[msg.sender] == UserState.UNINITIALIZED && 
+                fundPool.isBalanceInitialized(msg.sender)) {
+                _updateUserState(msg.sender, UserState.ACTIVE);
+            } else {
+                revert UserNotActive();
+            }
+        }
         
         // Convert external encrypted inputs to internal encrypted values
         euint64 budget = FHE.fromExternal(budgetExt, budgetProof);
@@ -349,6 +386,147 @@ contract IntentCollector is SepoliaConfig, Ownable, ReentrancyGuard {
             timeRemaining = 0;
         } else {
             timeRemaining = BATCH_TIMEOUT - elapsed;
+        }
+    }
+    
+    /// @notice Update user state (only callable by FundPool or BatchProcessor)
+    /// @param user User address
+    /// @param newState New state for the user
+    function updateUserState(address user, UserState newState) external {
+        // Only FundPool or BatchProcessor can update user state
+        if (msg.sender != address(fundPool) && msg.sender != batchProcessor) {
+            revert UnauthorizedCaller();
+        }
+        
+        _updateUserState(user, newState);
+    }
+    
+    /// @notice Internal function to update user state
+    /// @param user User address
+    /// @param newState New state for the user
+    function _updateUserState(address user, UserState newState) internal {
+        UserState oldState = userStates[user];
+        
+        // Validate state transitions
+        if (oldState == newState) return;
+        
+        // State transition rules
+        if (oldState == UserState.UNINITIALIZED) {
+            require(newState == UserState.ACTIVE, "Invalid state transition");
+        } else if (oldState == UserState.ACTIVE) {
+            require(
+                newState == UserState.WITHDRAWING || newState == UserState.WITHDRAWN,
+                "Invalid state transition"
+            );
+        } else if (oldState == UserState.WITHDRAWING) {
+            require(
+                newState == UserState.WITHDRAWN || newState == UserState.ACTIVE,
+                "Invalid state transition"
+            );
+        } else if (oldState == UserState.WITHDRAWN) {
+            require(newState == UserState.ACTIVE, "Invalid state transition");
+        }
+        
+        userStates[user] = newState;
+        emit UserStateChanged(user, oldState, newState, block.timestamp);
+    }
+    
+    /// @notice Cancel all active intents for a user (called during withdrawal)
+    /// @param user User address
+    function cancelUserIntents(address user) external {
+        // Only FundPool can cancel intents during withdrawal
+        if (msg.sender != address(fundPool)) {
+            revert UnauthorizedCaller();
+        }
+        
+        uint256[] memory intentIds = userIntents[user];
+        uint256 cancelledCount = 0;
+        uint256[] memory cancelledIds = new uint256[](intentIds.length);
+        
+        for (uint256 i = 0; i < intentIds.length; i++) {
+            uint256 intentId = intentIds[i];
+            EncryptedIntent storage intent = intents[intentId];
+            
+            // Only cancel active intents
+            if (intent.isActive && !intent.isProcessed) {
+                intent.isActive = false;
+                cancelledIds[cancelledCount] = intentId;
+                cancelledCount++;
+                
+                // Remove from pending intents if present
+                _removeFromPending(intentId);
+            }
+        }
+        
+        if (cancelledCount > 0) {
+            // Resize array to actual cancelled count
+            assembly {
+                mstore(cancelledIds, cancelledCount)
+            }
+            emit UserIntentsCancelled(user, cancelledIds, block.timestamp);
+        }
+    }
+    
+    /// @notice Remove an intent from pending list
+    /// @param intentId Intent ID to remove
+    function _removeFromPending(uint256 intentId) internal {
+        uint256 length = pendingIntents.length;
+        for (uint256 i = 0; i < length; i++) {
+            if (pendingIntents[i] == intentId) {
+                // Move last element to this position and pop
+                if (i < length - 1) {
+                    pendingIntents[i] = pendingIntents[length - 1];
+                }
+                pendingIntents.pop();
+                break;
+            }
+        }
+    }
+    
+    /// @notice Get user state
+    /// @param user User address
+    /// @return Current user state
+    function getUserState(address user) external view returns (UserState) {
+        return userStates[user];
+    }
+    
+    /// @notice Check if user can submit intents
+    /// @param user User address
+    /// @return True if user can submit intents
+    function canSubmitIntent(address user) external view returns (bool) {
+        return userStates[user] == UserState.ACTIVE || 
+               (userStates[user] == UserState.UNINITIALIZED && 
+                fundPool.isBalanceInitialized(user));
+    }
+    
+    /// @notice Get active intent IDs for batch processing (filters by user state)
+    /// @param intentIds Array of intent IDs to filter
+    /// @return activeIntentIds Array of intent IDs for active users only
+    function filterActiveIntents(uint256[] calldata intentIds) 
+        external 
+        view 
+        returns (uint256[] memory activeIntentIds) 
+    {
+        uint256[] memory tempIds = new uint256[](intentIds.length);
+        uint256 activeCount = 0;
+        
+        for (uint256 i = 0; i < intentIds.length; i++) {
+            uint256 intentId = intentIds[i];
+            EncryptedIntent memory intent = intents[intentId];
+            
+            // Only include intents from ACTIVE users
+            if (userStates[intent.user] == UserState.ACTIVE && 
+                intent.isActive && 
+                !intent.isProcessed) {
+                tempIds[activeCount] = intentId;
+                activeCount++;
+            }
+        }
+        
+        // Resize array to actual count
+        activeIntentIds = new uint256[](activeCount);
+        for (uint256 i = 0; i < activeCount; i++) {
+            activeIntentIds[i] = tempIds[i];
         }
     }
 }
