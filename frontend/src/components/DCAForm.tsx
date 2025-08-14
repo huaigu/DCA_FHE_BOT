@@ -176,7 +176,7 @@ export function DCAForm() {
 
   if (!isConnected) {
     return (
-      <Card className="w-full max-w-2xl">
+      <Card className="w-full max-w-4xl">
         <CardHeader className="text-center">
           <CardTitle className="flex items-center justify-center gap-2">
             <Shield className="w-6 h-6" />
@@ -201,7 +201,7 @@ export function DCAForm() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
     >
-      <Card className="w-full max-w-2xl">
+      <Card className="w-full max-w-4xl">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Shield className="w-6 h-6 text-blue-500" />
