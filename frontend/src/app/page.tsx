@@ -79,8 +79,8 @@ export default function HomePage() {
               Private DCA Strategies
             </h2>
             <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
-              Execute dollar-cost averaging strategies with full privacy using Fully Homomorphic Encryption. 
-              Your investment parameters remain encrypted while participating in batch executions.
+              Execute USDC → WETH DCA strategies with full privacy using Fully Homomorphic Encryption. 
+              Your investment parameters remain encrypted while participating in batch executions on Sepolia.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -106,7 +106,7 @@ export default function HomePage() {
                 <Users className="w-12 h-12 text-purple-600 mx-auto mb-4" />
                 <h3 className="text-lg font-semibold mb-2">Batch Execution</h3>
                 <p className="text-sm text-muted-foreground">
-                  K-anonymity through batched operations with 10 users
+                  K-anonymity through batched operations (5-10 users)
                 </p>
               </motion.div>
 

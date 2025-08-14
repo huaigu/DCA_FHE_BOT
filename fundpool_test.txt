@@ -1,0 +1,46 @@
+
+
+  FundPool
+    Deployment
+      ✔ Should set the correct USDC token
+      ✔ Should set the correct owner
+      ✔ Should initialize with zero total deposits
+    Configuration
+      ✔ Should allow owner to set BatchProcessor
+      ✔ Should allow owner to set IntentCollector
+      ✔ Should revert when non-owner tries to set BatchProcessor
+    Deposits
+      ✔ Should allow users to deposit USDC (41ms)
+      ✔ Should update encrypted balance on multiple deposits (41ms)
+      ✔ Should revert on zero amount deposit
+    Withdrawals
+      ✔ Should allow users to withdraw USDC
+      ✔ Should revert when user has no initialized balance
+      ✔ Should revert on zero withdrawal
+      ✔ Should revert when pool has insufficient USDC
+    Balance Management
+      ✔ Should track balance initialization
+      ✔ Should revert when trying to get uninitialized balance
+      1) Should allow BatchProcessor to deduct balances
+      ✔ Should allow BatchProcessor to transfer USDC
+    Emergency Functions
+      ✔ Should allow owner to recover stuck tokens
+      ✔ Should revert when non-owner tries to recover tokens
+
+
+  18 passing (2s)
+  1 failing
+
+  1) FundPool
+       Balance Management
+         Should allow BatchProcessor to deduct balances:
+     HardhatFhevmError: Fhevm assertion failed.
+      at assertHHFhevm (/home/bojack/DCA_FHE_BOT/node_modules/@fhevm/hardhat-plugin/src/internal/error.ts:5:11)
+      at FhevmProviderExtender._handleEthSendTransaction (/home/bojack/DCA_FHE_BOT/node_modules/@fhevm/hardhat-plugin/src/internal/provider/FhevmProviderExtender.ts:112:22)
+      at async HardhatEthersSigner.sendTransaction (/home/bojack/DCA_FHE_BOT/node_modules/@nomicfoundation/hardhat-ethers/src/signers.ts:181:18)
+      at async send (/home/bojack/DCA_FHE_BOT/node_modules/ethers/src.ts/contract/contract.ts:313:20)
+      at async Proxy.deductBalance (/home/bojack/DCA_FHE_BOT/node_modules/ethers/src.ts/contract/contract.ts:352:16)
+      at async Context.<anonymous> (/home/bojack/DCA_FHE_BOT/test/FundPool.test.ts:302:7)
+
+
+

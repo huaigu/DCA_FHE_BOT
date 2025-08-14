@@ -1,0 +1,236 @@
+
+
+  BatchProcessor
+    Deployment
+      ✔ should initialize with correct parameters
+      ✔ should not be paused initially
+    Chainlink Automation Integration
+      ✔ should check upkeep correctly when batch is ready (331ms)
+      ✔ should not need upkeep when no batch is ready (65ms)
+      ✔ should not need upkeep when automation is disabled (256ms)
+      ✔ should not need upkeep when contract is paused (245ms)
+      ✔ should not need upkeep with stale price data (249ms)
+    Manual Batch Processing
+      ✔ should allow owner to manually trigger batch processing (434ms)
+      ✔ should emit AutomationTriggered event on manual trigger (369ms)
+      ✔ should emit BatchProcessed event after successful processing (404ms)
+      ✔ should revert manual trigger from non-owner
+      ✔ should revert manual trigger when paused
+      1) should handle batch with no valid intents
+    Access Control
+      ✔ should only allow owner to set automation enabled
+      ✔ should only allow owner to pause
+      ✔ should only allow owner to unpause
+      ✔ should only allow owner to emergency withdraw
+    Emergency Functions
+      ✔ should allow owner to emergency withdraw ETH
+      ✔ should emit EmergencyWithdraw event
+    Pause Functionality
+      ✔ should pause and unpause correctly
+
+  ConfidentialToken
+    Deployment
+      ✔ should initialize with correct token metadata
+      ✔ should set correct batch processor
+    Balance Initialization
+      ✔ should initialize user balance correctly
+      ✔ should not double-initialize balance
+      ✔ should revert when getting balance of uninitialized user
+    Token Distribution
+      2) should distribute tokens to users correctly
+      3) should emit BalanceDistributed and EncryptedTransfer events
+      4) should auto-initialize balance during distribution
+      5) should revert with mismatched array lengths
+      6) should revert with zero address
+    Encrypted Transfers
+      7) "before each" hook for "should perform encrypted transfer between users"
+    Supply Management
+      ✔ should allow batch processor to mint tokens
+      ✔ should allow batch processor to burn tokens
+      ✔ should revert burn if amount exceeds supply
+    ERC20 Compatibility
+      ✔ should handle approvals correctly
+      ✔ should emit Approval event
+    Access Control
+      8) should only allow batch processor to distribute tokens
+      ✔ should only allow batch processor to mint
+      ✔ should only allow batch processor to burn
+      ✔ should only allow owner to set batch processor
+      ✔ should only allow owner to emergency recover
+    Emergency Functions
+      ✔ should allow owner to emergency recover ETH
+      9) should emit EmergencyWithdraw event
+
+  FHECounter
+    10) "before each" hook for "encrypted count should be uninitialized after deployment"
+
+  FHECounterSepolia
+    - increment the counter by 1
+
+  FundPool
+    Deployment
+      ✔ Should set the correct USDC token
+      ✔ Should set the correct owner
+      ✔ Should initialize with zero total deposits
+    Configuration
+      ✔ Should allow owner to set BatchProcessor
+      ✔ Should allow owner to set IntentCollector
+      ✔ Should revert when non-owner tries to set BatchProcessor
+    Deposits
+      ✔ Should allow users to deposit USDC
+      ✔ Should update encrypted balance on multiple deposits (40ms)
+      ✔ Should revert on zero amount deposit
+    Withdrawals
+      ✔ Should allow users to withdraw USDC
+      ✔ Should revert when user has no initialized balance
+      ✔ Should revert on zero withdrawal
+      ✔ Should revert when pool has insufficient USDC
+    Balance Management
+      ✔ Should track balance initialization
+      ✔ Should revert when trying to get uninitialized balance
+      11) Should allow BatchProcessor to deduct balances
+      ✔ Should allow BatchProcessor to transfer USDC
+    Emergency Functions
+      ✔ Should allow owner to recover stuck tokens
+      ✔ Should revert when non-owner tries to recover tokens
+
+  IntentCollector
+    Deployment
+      ✔ should initialize with correct parameters
+      ✔ should set correct batch parameters
+    Intent Submission
+      ✔ should submit encrypted intent successfully (41ms)
+      ✔ should track user intents correctly (61ms)
+      ✔ should emit IntentSubmitted event
+    Batch Management
+      ✔ should track batch readiness correctly (316ms)
+      ✔ should emit BatchReady event when batch is ready (269ms)
+      ✔ should allow batch processor to mark intents as processed (156ms)
+      ✔ should start new batch correctly (149ms)
+    Access Control
+      ✔ should only allow owner to set batch processor
+      ✔ should only allow batch processor to mark intents as processed
+      ✔ should only allow batch processor to start new batch
+    Error Handling
+      ✔ should revert when getting non-existent intent
+      ✔ should revert when marking non-existent intent as processed
+      ✔ should revert when setting invalid batch processor
+
+  DCA System Integration
+    Complete DCA Workflow
+Last processed batch: 1
+      ✔ should process a complete DCA batch successfully (486ms)
+      ✔ should handle price filtering correctly (207ms)
+      ✔ should handle automation triggers correctly (395ms)
+      ✔ should handle failed swaps gracefully (421ms)
+    System State Management
+      ✔ should maintain correct state across multiple batches (810ms)
+      ✔ should handle pause/unpause correctly (409ms)
+    Edge Cases
+      12) should handle batch with no valid intents due to price conditions
+      ✔ should handle stale price data correctly (294ms)
+
+
+  74 passing (15s)
+  1 pending
+  12 failing
+
+  1) BatchProcessor
+       Manual Batch Processing
+         should handle batch with no valid intents:
+
+      AssertionError: expected true to be false
+      + expected - actual
+
+      -true
+      +false
+      
+      at Context.<anonymous> (test/BatchProcessor.test.ts:468:40)
+
+  2) ConfidentialToken
+       Token Distribution
+         should distribute tokens to users correctly:
+     TypeError: hardhat_1.fhevm.asEuint64 is not a function
+      at Context.<anonymous> (test/ConfidentialToken.test.ts:120:38)
+
+  3) ConfidentialToken
+       Token Distribution
+         should emit BalanceDistributed and EncryptedTransfer events:
+     TypeError: hardhat_1.fhevm.asEuint64 is not a function
+      at Context.<anonymous> (test/ConfidentialToken.test.ts:141:39)
+
+  4) ConfidentialToken
+       Token Distribution
+         should auto-initialize balance during distribution:
+     TypeError: hardhat_1.fhevm.asEuint64 is not a function
+      at Context.<anonymous> (test/ConfidentialToken.test.ts:160:39)
+
+  5) ConfidentialToken
+       Token Distribution
+         should revert with mismatched array lengths:
+     TypeError: hardhat_1.fhevm.asEuint64 is not a function
+      at Context.<anonymous> (test/ConfidentialToken.test.ts:174:39)
+
+  6) ConfidentialToken
+       Token Distribution
+         should revert with zero address:
+     TypeError: hardhat_1.fhevm.asEuint64 is not a function
+      at Context.<anonymous> (test/ConfidentialToken.test.ts:186:39)
+
+  7) ConfidentialToken
+       Encrypted Transfers
+         "before each" hook for "should perform encrypted transfer between users":
+     TypeError: hardhat_1.fhevm.asEuint64 is not a function
+      at Context.<anonymous> (test/ConfidentialToken.test.ts:205:39)
+
+  8) ConfidentialToken
+       Access Control
+         should only allow batch processor to distribute tokens:
+     TypeError: hardhat_1.fhevm.asEuint64 is not a function
+      at Context.<anonymous> (test/ConfidentialToken.test.ts:376:39)
+      at processImmediate (node:internal/timers:483:21)
+
+  9) ConfidentialToken
+       Emergency Functions
+         should emit EmergencyWithdraw event:
+     AssertionError: Event "EmergencyWithdraw" doesn't exist in the contract
+      at onSuccess (node_modules/@nomicfoundation/hardhat-chai-matchers/src/internal/emit.ts:80:17)
+      at /home/bojack/DCA_FHE_BOT/node_modules/@nomicfoundation/hardhat-chai-matchers/src/internal/emit.ts:130:20
+      at async Context.<anonymous> (test/ConfidentialToken.test.ts:431:7)
+
+  10) FHECounter
+       "before each" hook for "encrypted count should be uninitialized after deployment":
+     HardhatError: HH700: Artifact for contract "FHECounter" not found. 
+      at Artifacts._handleWrongArtifactForContractName (/home/bojack/DCA_FHE_BOT/node_modules/hardhat/src/internal/artifacts.ts:721:11)
+      at Artifacts._getArtifactPathFromFiles (/home/bojack/DCA_FHE_BOT/node_modules/hardhat/src/internal/artifacts.ts:852:19)
+      at Artifacts._getArtifactPath (/home/bojack/DCA_FHE_BOT/node_modules/hardhat/src/internal/artifacts.ts:516:21)
+      at async Artifacts.readArtifact (/home/bojack/DCA_FHE_BOT/node_modules/hardhat/src/internal/artifacts.ts:71:26)
+      at async getContractFactory (/home/bojack/DCA_FHE_BOT/node_modules/@nomicfoundation/hardhat-ethers/src/internal/helpers.ts:120:22)
+      at async deployFixture (/home/bojack/DCA_FHE_BOT/test/FHECounter.ts:14:20)
+      at async Context.<anonymous> (/home/bojack/DCA_FHE_BOT/test/FHECounter.ts:38:58)
+
+  11) FundPool
+       Balance Management
+         Should allow BatchProcessor to deduct balances:
+     HardhatFhevmError: Fhevm assertion failed.
+      at assertHHFhevm (/home/bojack/DCA_FHE_BOT/node_modules/@fhevm/hardhat-plugin/src/internal/error.ts:5:11)
+      at FhevmProviderExtender._handleEthSendTransaction (/home/bojack/DCA_FHE_BOT/node_modules/@fhevm/hardhat-plugin/src/internal/provider/FhevmProviderExtender.ts:112:22)
+      at async HardhatEthersSigner.sendTransaction (/home/bojack/DCA_FHE_BOT/node_modules/@nomicfoundation/hardhat-ethers/src/signers.ts:181:18)
+      at async send (/home/bojack/DCA_FHE_BOT/node_modules/ethers/src.ts/contract/contract.ts:313:20)
+      at async Proxy.deductBalance (/home/bojack/DCA_FHE_BOT/node_modules/ethers/src.ts/contract/contract.ts:352:16)
+      at async Context.<anonymous> (/home/bojack/DCA_FHE_BOT/test/FundPool.test.ts:302:7)
+
+  12) DCA System Integration
+       Edge Cases
+         should handle batch with no valid intents due to price conditions:
+
+      AssertionError: expected 1000000000 to equal 0.
+      + expected - actual
+
+      -1000000000
+      +0
+      
+      at Context.<anonymous> (test/integration/DCASystem.test.ts:607:44)
+
+
+

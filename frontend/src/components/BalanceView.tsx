@@ -1,12 +1,16 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useWalletStore } from '@/lib/store'
-import { decryptUserBalance } from '@/utils/fheEncryption'
-import { formatCurrency, formatNumber, formatAddress } from '@/lib/utils'
+import { useFundPool } from '@/hooks/useFundPool'
+import { useConfidentialToken } from '@/hooks/useConfidentialToken'
+import { useUSDC } from '@/hooks/useUSDC'
+import { useIntentCollector } from '@/hooks/useIntentCollector'
+import { WithdrawModal } from './WithdrawModal'
+import { TOKEN_METADATA } from '@/config/contracts'
 import { 
   Eye, 
   EyeOff, 
@@ -17,134 +21,126 @@ import {
   Loader2,
   RefreshCw,
   Lock,
-  Unlock
+  Unlock,
+  Download
 } from 'lucide-react'
 
-interface EncryptedBalance {
-  token: string
-  symbol: string
-  encryptedAmount: string
-  isDecrypted: boolean
-  decryptedAmount?: bigint
-  lastUpdated: number
-}
-
-interface UserStats {
-  totalInvested: number
-  totalReceived: number
-  activeIntents: number
-  completedIntents: number
-  averagePrice: number
+interface DecryptedBalance {
+  value: string
+  isVisible: boolean
 }
 
 export function BalanceView() {
-  const { isConnected, address, signer } = useWalletStore()
-  const [balances, setBalances] = useState<EncryptedBalance[]>([])
-  const [userStats, setUserStats] = useState<UserStats | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const { isConnected, address } = useWalletStore()
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false)
+  const [decryptedBalances, setDecryptedBalances] = useState<{ [key: string]: DecryptedBalance }>({})
   const [isDecrypting, setIsDecrypting] = useState<{ [key: string]: boolean }>({})
-  const [showDecrypted, setShowDecrypted] = useState<{ [key: string]: boolean }>({})
-  const [error, setError] = useState<string | null>(null)
+  
+  // Hooks
+  const {
+    balance: fundPoolBalance,
+    refetchBalance: refetchFundPoolBalance,
+    formatBalance,
+    isLoading: isFundPoolLoading
+  } = useFundPool()
+  
+  const {
+    balance: tokenBalance,
+    tokenInfo,
+    refetchBalance: refetchTokenBalance,
+    formatEncryptedBalance,
+    isLoading: isTokenLoading
+  } = useConfidentialToken()
+  
+  const {
+    balance: usdcBalance,
+    formatAmount: formatUSDCAmount,
+    refetchBalance: refetchUSDCBalance
+  } = useUSDC()
+  
+  const {
+    userIntentIds,
+    refetchUserIntents
+  } = useIntentCollector()
+  
+  const isLoading = isFundPoolLoading || isTokenLoading
 
-  // Mock contract address - in real app this would come from environment
-  const contractAddress = '0x' + '0'.repeat(40)
+  /**
+   * Refresh all balance data
+   */
+  const refreshAllBalances = useCallback(async () => {
+    await Promise.all([
+      refetchFundPoolBalance(),
+      refetchTokenBalance(),
+      refetchUSDCBalance(),
+      refetchUserIntents()
+    ])
+  }, [refetchFundPoolBalance, refetchTokenBalance, refetchUSDCBalance, refetchUserIntents])
 
-  useEffect(() => {
-    if (isConnected && address) {
-      loadUserData()
-    }
-  }, [isConnected, address])
-
-  const loadUserData = async () => {
-    setIsLoading(true)
-    setError(null)
-
+  /**
+   * Simulate balance decryption
+   */
+  const decryptBalance = useCallback(async (tokenType: 'usdc' | 'weth') => {
+    setIsDecrypting(prev => ({ ...prev, [tokenType]: true }))
+    
     try {
-      // Mock data - in real app this would come from smart contract
-      const mockBalances: EncryptedBalance[] = [
-        {
-          token: 'ETH',
-          symbol: 'ETH',
-          encryptedAmount: '0x' + 'a'.repeat(64), // Mock encrypted value
-          isDecrypted: false,
-          lastUpdated: Date.now() - 300000, // 5 minutes ago
-        },
-        {
-          token: 'USDC',
-          symbol: 'USDC',
-          encryptedAmount: '0x' + 'b'.repeat(64), // Mock encrypted value
-          isDecrypted: false,
-          lastUpdated: Date.now() - 180000, // 3 minutes ago
-        },
-      ]
-
-      const mockStats: UserStats = {
-        totalInvested: 5420.50,
-        totalReceived: 2.847,
-        activeIntents: 2,
-        completedIntents: 8,
-        averagePrice: 1905.25,
-      }
-
-      setBalances(mockBalances)
-      setUserStats(mockStats)
-    } catch (error) {
-      console.error('Failed to load user data:', error)
-      setError('Failed to load balance data')
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const decryptBalance = async (index: number) => {
-    if (!signer) {
-      setError('Wallet not connected')
-      return
-    }
-
-    const balance = balances[index]
-    setIsDecrypting(prev => ({ ...prev, [balance.token]: true }))
-    setError(null)
-
-    try {
-      // In a real app, this would decrypt the actual encrypted balance
-      // For demo purposes, we'll simulate the decryption with mock values
-      await new Promise(resolve => setTimeout(resolve, 2000)) // Simulate decryption time
+      // Simulate decryption delay
+      await new Promise(resolve => setTimeout(resolve, 1500))
       
-      const mockDecryptedAmounts: { [key: string]: bigint } = {
-        'ETH': BigInt(2847000000000000000), // 2.847 ETH
-        'USDC': BigInt(1247500000), // 1247.50 USDC
+      // Mock decrypted values
+      const mockDecrypted = {
+        usdc: (Math.random() * 1000 + 100).toFixed(2), // Random USDC amount
+        weth: (Math.random() * 5 + 0.5).toFixed(4)     // Random WETH amount
       }
-
-      const decryptedAmount = mockDecryptedAmounts[balance.token]
-
-      setBalances(prev => prev.map((b, i) => 
-        i === index 
-          ? { ...b, isDecrypted: true, decryptedAmount }
-          : b
-      ))
-
-      setShowDecrypted(prev => ({ ...prev, [balance.token]: true }))
+      
+      setDecryptedBalances(prev => ({
+        ...prev,
+        [tokenType]: {
+          value: mockDecrypted[tokenType],
+          isVisible: true
+        }
+      }))
     } catch (error) {
-      console.error('Failed to decrypt balance:', error)
-      setError(`Failed to decrypt ${balance.symbol} balance`)
+      console.error('Decryption failed:', error)
     } finally {
-      setIsDecrypting(prev => ({ ...prev, [balance.token]: false }))
+      setIsDecrypting(prev => ({ ...prev, [tokenType]: false }))
     }
-  }
+  }, [])
 
-  const toggleBalanceVisibility = (token: string) => {
-    setShowDecrypted(prev => ({ ...prev, [token]: !prev[token] }))
-  }
+  /**
+   * Toggle balance visibility
+   */
+  const toggleBalanceVisibility = useCallback((tokenType: string) => {
+    setDecryptedBalances(prev => ({
+      ...prev,
+      [tokenType]: {
+        ...prev[tokenType],
+        isVisible: !prev[tokenType]?.isVisible
+      }
+    }))
+  }, [])
 
-  const formatTokenAmount = (amount: bigint, symbol: string): string => {
-    if (symbol === 'ETH') {
-      return formatNumber(Number(amount) / 1e18, 6) + ' ETH'
-    } else if (symbol === 'USDC') {
-      return formatCurrency(Number(amount) / 1e6)
+  /**
+   * Get balance display for a token type
+   */
+  const getBalanceDisplay = useCallback((tokenType: 'usdc' | 'weth') => {
+    const decrypted = decryptedBalances[tokenType]
+    
+    if (decrypted && decrypted.isVisible) {
+      return tokenType === 'usdc' ? 
+        `${decrypted.value} USDC` : 
+        `${decrypted.value} ${tokenInfo.symbol}`
     }
-    return amount.toString()
-  }
+    
+    return '[Encrypted Balance]'
+  }, [decryptedBalances, tokenInfo.symbol])
+  
+  /**
+   * Check if balance is decrypted
+   */
+  const isBalanceDecrypted = useCallback((tokenType: string) => {
+    return !!decryptedBalances[tokenType]?.value
+  }, [decryptedBalances])
 
   if (!isConnected) {
     return (
@@ -169,70 +165,60 @@ export function BalanceView() {
 
   return (
     <div className="space-y-6">
-      {/* User Stats Overview */}
-      {userStats && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-        >
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="w-5 h-5" />
-                DCA Performance Overview
-              </CardTitle>
-              <CardDescription>
-                Your dollar-cost averaging statistics and performance
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">
-                    {formatCurrency(userStats.totalInvested)}
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    Total Invested
-                  </div>
+      {/* DCA Statistics Overview */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5" />
+              DCA Activity Overview
+            </CardTitle>
+            <CardDescription>
+              Your dollar-cost averaging activity and account status
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-blue-600">
+                  {formatUSDCAmount(usdcBalance)}
                 </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">
-                    {formatNumber(userStats.totalReceived, 3)} ETH
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    ETH Received
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-purple-600">
-                    {userStats.activeIntents}
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    Active Intents
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-orange-600">
-                    {userStats.completedIntents}
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    Completed
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-indigo-600">
-                    {formatCurrency(userStats.averagePrice)}
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    Avg. ETH Price
-                  </div>
+                <div className="text-sm text-muted-foreground">
+                  USDC Wallet
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600">
+                  {fundPoolBalance.isInitialized ? '[Encrypted]' : '0'}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  FundPool Balance
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-purple-600">
+                  {userIntentIds.length}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Active Intents
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-orange-600">
+                  {tokenBalance.isInitialized ? '[Encrypted]' : '0'}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {tokenInfo.symbol} Received
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
 
       {/* Encrypted Balances */}
       <motion.div
@@ -252,70 +238,68 @@ export function BalanceView() {
                   Your confidential token balances from DCA executions
                 </CardDescription>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={loadUserData}
-                disabled={isLoading}
-              >
-                <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowWithdrawModal(true)}
+                  disabled={!fundPoolBalance.isInitialized && !tokenBalance.isInitialized}
+                >
+                  <Download className="w-4 h-4 mr-1" />
+                  Withdraw
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={refreshAllBalances}
+                  disabled={isLoading}
+                >
+                  <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+                </Button>
+              </div>
             </div>
           </CardHeader>
 
           <CardContent>
-            {error && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg"
-              >
-                <p className="text-sm text-red-800">{error}</p>
-              </motion.div>
-            )}
-
             <div className="space-y-4">
-              {balances.map((balance, index) => (
-                <motion.div
-                  key={balance.token}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.3, delay: index * 0.1 }}
-                  className="p-4 border rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white font-bold">
-                        {balance.symbol.charAt(0)}
-                      </div>
-                      <div>
-                        <div className="font-medium">{balance.symbol}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {balance.token}
-                        </div>
+              {/* USDC FundPool Balance */}
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.3 }}
+                className="p-4 border rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-gradient-to-r from-green-500 to-blue-500 rounded-full flex items-center justify-center text-white font-bold">
+                      $
+                    </div>
+                    <div>
+                      <div className="font-medium">USDC</div>
+                      <div className="text-sm text-muted-foreground">
+                        FundPool Balance
                       </div>
                     </div>
+                  </div>
 
-                    <div className="text-right">
-                      <div className="flex items-center gap-2">
-                        {balance.isDecrypted && showDecrypted[balance.token] ? (
-                          <div className="font-mono text-lg">
-                            {formatTokenAmount(balance.decryptedAmount!, balance.symbol)}
-                          </div>
-                        ) : (
-                          <div className="font-mono text-lg text-muted-foreground">
-                            {'*'.repeat(12)}
-                          </div>
-                        )}
-                        
+                  <div className="text-right">
+                    <div className="flex items-center gap-2">
+                      <div className="font-mono text-lg">
+                        {isBalanceDecrypted('usdc') && decryptedBalances.usdc?.isVisible ? 
+                          getBalanceDisplay('usdc') : 
+                          (fundPoolBalance.isInitialized ? '[Encrypted]' : '0 USDC')
+                        }
+                      </div>
+                      
+                      {fundPoolBalance.isInitialized && (
                         <div className="flex gap-1">
-                          {balance.isDecrypted ? (
+                          {isBalanceDecrypted('usdc') ? (
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => toggleBalanceVisibility(balance.token)}
+                              onClick={() => toggleBalanceVisibility('usdc')}
                             >
-                              {showDecrypted[balance.token] ? (
+                              {decryptedBalances.usdc?.isVisible ? (
                                 <EyeOff className="w-4 h-4" />
                               ) : (
                                 <Eye className="w-4 h-4" />
@@ -325,10 +309,10 @@ export function BalanceView() {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => decryptBalance(index)}
-                              disabled={isDecrypting[balance.token]}
+                              onClick={() => decryptBalance('usdc')}
+                              disabled={isDecrypting.usdc}
                             >
-                              {isDecrypting[balance.token] ? (
+                              {isDecrypting.usdc ? (
                                 <Loader2 className="w-4 h-4 animate-spin" />
                               ) : (
                                 <Unlock className="w-4 h-4" />
@@ -336,44 +320,126 @@ export function BalanceView() {
                             </Button>
                           )}
                         </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Encryption Status */}
+                <div className="mt-3 pt-3 border-t border-gray-200">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      {fundPoolBalance.isInitialized ? (
+                        <>
+                          <Lock className="w-3 h-3 text-blue-500" />
+                          <span className="text-blue-600">Encrypted on-chain</span>
+                        </>
+                      ) : (
+                        <>
+                          <DollarSign className="w-3 h-3 text-gray-500" />
+                          <span className="text-gray-600">No deposits yet</span>
+                        </>
+                      )}
+                    </div>
+                    <div className="text-muted-foreground text-xs">
+                      Available for DCA strategies
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+
+              {/* WETH Token Balance */}
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.3, delay: 0.1 }}
+                className="p-4 border rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white font-bold">
+                      Ξ
+                    </div>
+                    <div>
+                      <div className="font-medium">{tokenInfo.symbol}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {tokenInfo.name}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <div className="flex items-center gap-2">
+                      <div className="font-mono text-lg">
+                        {isBalanceDecrypted('weth') && decryptedBalances.weth?.isVisible ? 
+                          getBalanceDisplay('weth') : 
+                          (tokenBalance.isInitialized ? '[Encrypted]' : `0 ${tokenInfo.symbol}`)
+                        }
                       </div>
                       
-                      <div className="text-sm text-muted-foreground mt-1">
-                        Updated {new Date(balance.lastUpdated).toLocaleTimeString()}
-                      </div>
+                      {tokenBalance.isInitialized && (
+                        <div className="flex gap-1">
+                          {isBalanceDecrypted('weth') ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => toggleBalanceVisibility('weth')}
+                            >
+                              {decryptedBalances.weth?.isVisible ? (
+                                <EyeOff className="w-4 h-4" />
+                              ) : (
+                                <Eye className="w-4 h-4" />
+                              )}
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => decryptBalance('weth')}
+                              disabled={isDecrypting.weth}
+                            >
+                              {isDecrypting.weth ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Unlock className="w-4 h-4" />
+                              )}
+                            </Button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
+                </div>
 
-                  {/* Encryption Status */}
-                  <div className="mt-3 pt-3 border-t border-gray-200">
-                    <div className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-2">
-                        {balance.isDecrypted ? (
-                          <>
-                            <Unlock className="w-3 h-3 text-green-500" />
-                            <span className="text-green-600">Decrypted locally</span>
-                          </>
-                        ) : (
-                          <>
-                            <Lock className="w-3 h-3 text-blue-500" />
-                            <span className="text-blue-600">Encrypted on-chain</span>
-                          </>
-                        )}
-                      </div>
-                      <div className="text-muted-foreground">
-                        {formatAddress(balance.encryptedAmount)}
-                      </div>
+                {/* Encryption Status */}
+                <div className="mt-3 pt-3 border-t border-gray-200">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      {tokenBalance.isInitialized ? (
+                        <>
+                          <Lock className="w-3 h-3 text-blue-500" />
+                          <span className="text-blue-600">Encrypted on-chain</span>
+                        </>
+                      ) : (
+                        <>
+                          <DollarSign className="w-3 h-3 text-gray-500" />
+                          <span className="text-gray-600">No tokens received yet</span>
+                        </>
+                      )}
+                    </div>
+                    <div className="text-muted-foreground text-xs">
+                      From DCA executions
                     </div>
                   </div>
-                </motion.div>
-              ))}
+                </div>
+              </motion.div>
             </div>
 
-            {balances.length === 0 && !isLoading && (
+            {!fundPoolBalance.isInitialized && !tokenBalance.isInitialized && (
               <div className="text-center py-8">
                 <DollarSign className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
                 <p className="text-muted-foreground">
-                  No token balances found. Submit a DCA intent to start receiving tokens.
+                  No encrypted balances found. Deposit USDC and create a DCA intent to start.
                 </p>
               </div>
             )}
@@ -403,6 +469,13 @@ export function BalanceView() {
           </CardContent>
         </Card>
       </motion.div>
+
+      {/* Withdraw Modal */}
+      <WithdrawModal
+        isOpen={showWithdrawModal}
+        onClose={() => setShowWithdrawModal(false)}
+        onSuccess={refreshAllBalances}
+      />
     </div>
   )
 }

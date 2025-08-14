@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { useDCAStore } from '@/lib/store'
-import { formatNumber } from '@/lib/utils'
+import { useIntentCollector } from '@/hooks/useIntentCollector'
+import { DCA_CONFIG } from '@/config/contracts'
 import { 
   Users, 
   Clock, 
@@ -18,21 +18,18 @@ import {
   Activity
 } from 'lucide-react'
 
-interface Batch {
-  id: number
-  size: number
-  status: 'collecting' | 'processing' | 'processed' | 'failed'
-  timestamp: number
-  totalAmount?: number
-  priceAtExecution?: number
-  participantCount?: number
-}
-
-const BATCH_TARGET_SIZE = 10
-const BATCH_TIMEOUT = 5 * 60 * 1000 // 5 minutes
+type BatchStatus = 'waiting' | 'collecting' | 'ready' | 'processing' | 'processed' | 'failed'
 
 export function BatchStatus() {
-  const { batches, currentBatch, refreshBatches, setCurrentBatch } = useDCAStore()
+  const {
+    currentBatchStatus,
+    batchStats,
+    userIntentIds,
+    refetchBatchStatus,
+    refetchBatchStats,
+    isLoading
+  } = useIntentCollector()
+  
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [currentTime, setCurrentTime] = useState(Date.now())
 
@@ -60,7 +57,10 @@ export function BatchStatus() {
   const handleRefresh = async () => {
     setIsRefreshing(true)
     try {
-      await refreshBatches()
+      await Promise.all([
+        refetchBatchStatus(),
+        refetchBatchStats()
+      ])
     } finally {
       setIsRefreshing(false)
     }
@@ -96,66 +96,50 @@ export function BatchStatus() {
     }
   }
 
-  const getTimeRemaining = (batch: Batch) => {
-    if (batch.status !== 'collecting') return null
+  const getTimeRemaining = () => {
+    const timeRemaining = Number(batchStats.timeRemaining)
     
-    const elapsed = currentTime - batch.timestamp
-    const remaining = Math.max(0, BATCH_TIMEOUT - elapsed)
+    if (timeRemaining === 0) return 'Timeout reached'
     
-    if (remaining === 0) return 'Timeout reached'
-    
-    const minutes = Math.floor(remaining / 60000)
-    const seconds = Math.floor((remaining % 60000) / 1000)
+    const minutes = Math.floor(timeRemaining / 60)
+    const seconds = timeRemaining % 60
     
     return `${minutes}:${seconds.toString().padStart(2, '0')}`
   }
 
-  const getProgressPercentage = (batch: Batch) => {
-    if (batch.status === 'collecting') {
-      const sizeProgress = (batch.size / BATCH_TARGET_SIZE) * 50
-      const elapsed = currentTime - batch.timestamp
-      const timeProgress = Math.min((elapsed / BATCH_TIMEOUT) * 50, 50)
-      return Math.min(sizeProgress + timeProgress, 100)
-    }
-    return batch.status === 'processed' ? 100 : 75
+  const getProgressPercentage = () => {
+    const pendingCount = Number(batchStats.pendingCount)
+    const timeRemaining = Number(batchStats.timeRemaining)
+    
+    // Size progress (0-50%)
+    const sizeProgress = Math.min((pendingCount / DCA_CONFIG.MAX_BATCH_SIZE) * 50, 50)
+    
+    // Time progress (0-50%)
+    const timeElapsed = DCA_CONFIG.BATCH_TIMEOUT - timeRemaining
+    const timeProgress = Math.min((timeElapsed / DCA_CONFIG.BATCH_TIMEOUT) * 50, 50)
+    
+    return Math.min(sizeProgress + timeProgress, 100)
   }
 
-  // Mock data for demo - in real app this would come from smart contract
-  const mockCurrentBatch: Batch = {
-    id: Date.now(),
-    size: 7,
-    status: 'collecting',
-    timestamp: Date.now() - 120000, // 2 minutes ago
-    participantCount: 7,
+  // Current batch info
+  const currentBatchId = Number(batchStats.currentBatch)
+  const pendingCount = Number(batchStats.pendingCount)
+  const timeRemaining = Number(batchStats.timeRemaining)
+  const isReady = currentBatchStatus.isReady
+  const userIntentsInBatch = userIntentIds.length
+  
+  // Determine batch status
+  const batchStatus = isReady ? 'ready' : 
+    pendingCount >= DCA_CONFIG.MIN_BATCH_SIZE ? 'collecting' : 
+    'waiting'
+    
+  // Format time remaining
+  const formatTime = (seconds: number): string => {
+    if (seconds <= 0) return 'Expired'
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}:${secs.toString().padStart(2, '0')}`
   }
-
-  const mockRecentBatches: Batch[] = [
-    {
-      id: 1,
-      size: 10,
-      status: 'processed',
-      timestamp: Date.now() - 1800000, // 30 minutes ago
-      totalAmount: 15420,
-      priceAtExecution: 1875.50,
-      participantCount: 10,
-    },
-    {
-      id: 2,
-      size: 8,
-      status: 'failed',
-      timestamp: Date.now() - 3600000, // 1 hour ago
-      participantCount: 8,
-    },
-    {
-      id: 3,
-      size: 10,
-      status: 'processed',
-      timestamp: Date.now() - 5400000, // 1.5 hours ago
-      totalAmount: 23150,
-      priceAtExecution: 1920.75,
-      participantCount: 10,
-    },
-  ]
 
   return (
     <div className="space-y-6">
@@ -165,12 +149,12 @@ export function BatchStatus() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <Card className={`${getStatusColor(mockCurrentBatch.status)} border-2`}>
+        <Card className={`${getStatusColor(batchStatus)} border-2`}>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2">
-                {getStatusIcon(mockCurrentBatch.status)}
-                Current Batch #{mockCurrentBatch.id}
+                {getStatusIcon(batchStatus)}
+                Current Batch #{currentBatchId}
               </CardTitle>
               <Button
                 variant="ghost"
@@ -182,8 +166,12 @@ export function BatchStatus() {
               </Button>
             </div>
             <CardDescription>
-              {mockCurrentBatch.status === 'collecting' 
+              {batchStatus === 'waiting'
+                ? 'Waiting for more intents to join the batch'
+                : batchStatus === 'collecting' 
                 ? 'Collecting encrypted intents for batch execution'
+                : batchStatus === 'ready'
+                ? 'Batch ready for processing'
                 : 'Batch processing in progress'
               }
             </CardDescription>
@@ -194,13 +182,13 @@ export function BatchStatus() {
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span>Progress</span>
-                <span>{formatNumber(getProgressPercentage(mockCurrentBatch))}%</span>
+                <span>{Math.round(getProgressPercentage())}%</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
                 <motion.div
                   className="bg-blue-500 h-2 rounded-full"
                   initial={{ width: 0 }}
-                  animate={{ width: `${getProgressPercentage(mockCurrentBatch)}%` }}
+                  animate={{ width: `${getProgressPercentage()}%` }}
                   transition={{ duration: 0.5 }}
                 />
               </div>
@@ -210,32 +198,30 @@ export function BatchStatus() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="text-center">
                 <div className="text-2xl font-bold text-blue-600">
-                  {mockCurrentBatch.size}
+                  {pendingCount}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  of {BATCH_TARGET_SIZE} intents
+                  of {DCA_CONFIG.MAX_BATCH_SIZE} intents
                 </div>
               </div>
 
               <div className="text-center">
                 <div className="text-2xl font-bold text-purple-600">
-                  {mockCurrentBatch.participantCount}
+                  {userIntentsInBatch}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  participants
+                  your intents
                 </div>
               </div>
 
-              {mockCurrentBatch.status === 'collecting' && (
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-orange-600">
-                    {getTimeRemaining(mockCurrentBatch) || '--'}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    time remaining
-                  </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-orange-600">
+                  {formatTime(timeRemaining)}
                 </div>
-              )}
+                <div className="text-xs text-muted-foreground">
+                  time remaining
+                </div>
+              </div>
 
               <div className="text-center">
                 <div className="text-2xl font-bold text-green-600">
@@ -250,17 +236,23 @@ export function BatchStatus() {
             {/* Status Message */}
             <div className="p-3 rounded-lg bg-white/50 border">
               <p className="text-sm">
-                {mockCurrentBatch.status === 'collecting' && (
+                {batchStatus === 'waiting' && (
+                  <>
+                    <Users className="w-4 h-4 inline mr-2" />
+                    Waiting for at least {DCA_CONFIG.MIN_BATCH_SIZE} intents to start batch processing.
+                  </>
+                )}
+                {batchStatus === 'collecting' && (
                   <>
                     <Clock className="w-4 h-4 inline mr-2" />
-                    Batch will execute when {BATCH_TARGET_SIZE} intents are collected 
+                    Batch will execute when {DCA_CONFIG.MAX_BATCH_SIZE} intents are collected 
                     or timeout is reached. Your intent parameters remain encrypted.
                   </>
                 )}
-                {mockCurrentBatch.status === 'processing' && (
+                {batchStatus === 'ready' && (
                   <>
-                    <Loader2 className="w-4 h-4 inline mr-2 animate-spin" />
-                    Processing batch with FHE price filtering and aggregation...
+                    <CheckCircle className="w-4 h-4 inline mr-2" />
+                    Batch is ready for processing with FHE price filtering and aggregation.
                   </>
                 )}
               </p>
@@ -283,68 +275,42 @@ export function BatchStatus() {
 
         <CardContent>
           <div className="space-y-3">
-            <AnimatePresence>
-              {mockRecentBatches.map((batch) => (
-                <motion.div
-                  key={batch.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
-                  transition={{ duration: 0.3 }}
-                  className={`p-4 rounded-lg border ${getStatusColor(batch.status)} cursor-pointer hover:shadow-md transition-shadow`}
-                  onClick={() => setCurrentBatch(batch)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      {getStatusIcon(batch.status)}
-                      <div>
-                        <div className="font-medium">Batch #{batch.id}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {new Date(batch.timestamp).toLocaleString()}
-                        </div>
+            {userIntentIds.length > 0 ? (
+              <div className="p-4 rounded-lg border bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Shield className="w-4 h-4 text-blue-500" />
+                    <div>
+                      <div className="font-medium">Your Active Intents</div>
+                      <div className="text-sm text-muted-foreground">
+                        {userIntentIds.length} encrypted DCA {userIntentIds.length === 1 ? 'intent' : 'intents'}
                       </div>
-                    </div>
-
-                    <div className="text-right">
-                      <div className="font-medium">
-                        {batch.participantCount} participants
-                      </div>
-                      {batch.totalAmount && (
-                        <div className="text-sm text-muted-foreground">
-                          ${formatNumber(batch.totalAmount)} USDC
-                        </div>
-                      )}
-                      {batch.priceAtExecution && (
-                        <div className="text-sm text-green-600">
-                          ETH: ${formatNumber(batch.priceAtExecution)}
-                        </div>
-                      )}
                     </div>
                   </div>
-
-                  {batch.status === 'processed' && batch.totalAmount && (
-                    <div className="mt-3 pt-3 border-t border-gray-200">
-                      <div className="grid grid-cols-3 gap-4 text-sm">
-                        <div>
-                          <span className="text-muted-foreground">Total: </span>
-                          <span className="font-medium">${formatNumber(batch.totalAmount)}</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Price: </span>
-                          <span className="font-medium">${formatNumber(batch.priceAtExecution!)}</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">ETH: </span>
-                          <span className="font-medium">
-                            {formatNumber(batch.totalAmount / batch.priceAtExecution!, 3)}
-                          </span>
-                        </div>
-                      </div>
+                  <div className="text-right">
+                    <div className="text-lg font-bold text-blue-600">
+                      {userIntentIds.length}
                     </div>
-                  )}
-                </motion.div>
-              ))}
-            </AnimatePresence>
+                    <div className="text-xs text-muted-foreground">
+                      active
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 rounded-lg border bg-gray-50 dark:bg-gray-800 text-center">
+                <div className="text-muted-foreground">
+                  No active DCA intents. Create your first encrypted strategy above.
+                </div>
+              </div>
+            )}
+            
+            <div className="text-xs text-muted-foreground text-center mt-4">
+              <p>
+                Batch history will be available after contract deployment.
+                All intents use privacy-preserving FHE encryption.
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>

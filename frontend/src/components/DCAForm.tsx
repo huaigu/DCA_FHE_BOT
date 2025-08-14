@@ -1,127 +1,178 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { useWalletStore, useDCAStore } from '@/lib/store'
-import { encryptDCAIntent, type EncryptedIntent } from '@/utils/fheEncryption'
-import { formatCurrency, formatNumber } from '@/lib/utils'
-import { Loader2, Shield, DollarSign, Clock, TrendingUp } from 'lucide-react'
+import { useToast } from '@/lib/hooks/use-toast'
+import { useWalletStore } from '@/lib/store'
+import { useIntentCollector } from '@/hooks/useIntentCollector'
+import { useFundPool } from '@/hooks/useFundPool'
+import { useUSDC } from '@/hooks/useUSDC'
+import { SEPOLIA_CONTRACTS, DCA_CONFIG, TOKEN_METADATA } from '@/config/contracts'
+import { Loader2, Shield, DollarSign, Clock, TrendingUp, Wallet, ArrowDown, Settings } from 'lucide-react'
+import { DepositModal } from './DepositModal'
 
 interface DCAFormData {
-  budget: string
+  investmentAmount: string
   tradesCount: string
   amountPerTrade: string
   frequency: string
   minPrice: string
   maxPrice: string
+  useAmountMode: boolean // true for "amount per trade", false for "trades count"
 }
 
 export function DCAForm() {
-  const { isConnected, address, provider } = useWalletStore()
-  const { isSubmitting, submitIntent, error, clearError } = useDCAStore()
+  const { isConnected, address } = useWalletStore()
+  const { toast } = useToast()
+  
+  // Hooks
+  const { submitIntent, isLoading: isSubmittingIntent } = useIntentCollector()
+  const { balance: fundPoolBalance, formatBalance } = useFundPool()
+  const { balance: usdcBalance, formatAmount } = useUSDC()
   
   const [formData, setFormData] = useState<DCAFormData>({
-    budget: '',
-    tradesCount: '',
+    investmentAmount: '',
+    tradesCount: '10',
     amountPerTrade: '',
-    frequency: '',
+    frequency: '24', // 1 day in hours
     minPrice: '',
     maxPrice: '',
+    useAmountMode: false
   })
 
-  const [isEncrypting, setIsEncrypting] = useState(false)
+  const [showDepositModal, setShowDepositModal] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
 
-  const handleInputChange = (field: keyof DCAFormData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
-    
-    // Auto-calculate amount per trade based on budget and trades count
-    if (field === 'budget' || field === 'tradesCount') {
-      const budget = field === 'budget' ? parseFloat(value) : parseFloat(formData.budget)
-      const trades = field === 'tradesCount' ? parseInt(value) : parseInt(formData.tradesCount)
+  const handleInputChange = useCallback((field: keyof DCAFormData, value: string) => {
+    setFormData(prev => {
+      const updated = { ...prev, [field]: value }
       
-      if (budget && trades && trades > 0) {
-        const amountPerTrade = (budget / trades).toFixed(2)
-        setFormData(prev => ({ ...prev, amountPerTrade }))
+      // Auto-calculate based on input mode
+      if (field === 'investmentAmount' || field === 'tradesCount' || field === 'amountPerTrade') {
+        const investment = field === 'investmentAmount' ? parseFloat(value) : parseFloat(updated.investmentAmount)
+        const trades = field === 'tradesCount' ? parseInt(value) : parseInt(updated.tradesCount)
+        
+        if (!updated.useAmountMode && investment && trades && trades > 0) {
+          // Calculate amount per trade from investment and trades
+          const calculated = (investment / trades).toFixed(2)
+          updated.amountPerTrade = calculated
+        }
       }
-    }
-  }
+      
+      return updated
+    })
+  }, [])
 
-  const validateForm = (): string | null => {
-    const { budget, tradesCount, amountPerTrade, frequency, minPrice, maxPrice } = formData
+  const validateForm = useCallback((): string | null => {
+    const { investmentAmount, tradesCount, amountPerTrade, frequency, minPrice, maxPrice } = formData
 
-    if (!budget || parseFloat(budget) <= 0) return 'Budget must be greater than 0'
+    if (!investmentAmount || parseFloat(investmentAmount) <= 0) return 'Investment amount must be greater than 0'
     if (!tradesCount || parseInt(tradesCount) <= 0) return 'Number of trades must be greater than 0'
     if (!amountPerTrade || parseFloat(amountPerTrade) <= 0) return 'Amount per trade must be greater than 0'
     if (!frequency || parseInt(frequency) <= 0) return 'Frequency must be greater than 0'
-    if (!minPrice || parseFloat(minPrice) <= 0) return 'Minimum price must be greater than 0'
-    if (!maxPrice || parseFloat(maxPrice) <= 0) return 'Maximum price must be greater than 0'
-    if (parseFloat(minPrice) >= parseFloat(maxPrice)) return 'Minimum price must be less than maximum price'
+    
+    // Check fund pool balance
+    const investmentAmountBigInt = BigInt(Math.floor(parseFloat(investmentAmount) * 1e6))
+    if (!fundPoolBalance.isInitialized) return 'Please deposit USDC to FundPool first'
+    
+    // Price conditions are optional
+    if (minPrice && maxPrice) {
+      if (parseFloat(minPrice) >= parseFloat(maxPrice)) return 'Minimum price must be less than maximum price'
+    }
 
     return null
-  }
+  }, [formData, fundPoolBalance])
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!isConnected || !provider || !address) {
-      alert('Please connect your wallet first')
+    if (!isConnected || !address) {
+      toast({
+        title: 'Wallet Required',
+        description: 'Please connect your wallet first',
+        variant: 'destructive'
+      })
       return
     }
 
     const validationError = validateForm()
     if (validationError) {
-      alert(validationError)
+      toast({
+        title: 'Validation Error',
+        description: validationError,
+        variant: 'destructive'
+      })
       return
     }
 
     try {
-      setIsEncrypting(true)
-      clearError()
-
-      // Convert form data to encrypted intent
-      const intent: EncryptedIntent = {
-        budget: BigInt(Math.floor(parseFloat(formData.budget) * 1e6)), // Convert to USDC units
+      // Convert form data to DCA intent parameters
+      const intentParams = {
+        budget: BigInt(Math.floor(parseFloat(formData.investmentAmount) * 1e6)), // USDC has 6 decimals
         tradesCount: parseInt(formData.tradesCount),
         amountPerTrade: BigInt(Math.floor(parseFloat(formData.amountPerTrade) * 1e6)),
-        frequency: parseInt(formData.frequency),
-        minPrice: BigInt(Math.floor(parseFloat(formData.minPrice) * 1e8)), // Price in cents
-        maxPrice: BigInt(Math.floor(parseFloat(formData.maxPrice) * 1e8)),
+        frequency: parseInt(formData.frequency) * 3600, // Convert hours to seconds
+        minPrice: formData.minPrice ? BigInt(Math.floor(parseFloat(formData.minPrice) * 1e8)) : BigInt(0),
+        maxPrice: formData.maxPrice ? BigInt(Math.floor(parseFloat(formData.maxPrice) * 1e8)) : BigInt(2**32 - 1) // Max uint32
       }
 
-      // Encrypt the intent (this would use the contract address in a real implementation)
-      const contractAddress = '0x' + '0'.repeat(40) // Placeholder
-      const encryptedProof = await encryptDCAIntent(intent, contractAddress, address)
-
-      // Submit to smart contract
-      await submitIntent({
-        ...intent,
-        encryptedProof,
-        userAddress: address,
+      toast({
+        title: 'Submitting Intent',
+        description: 'Encrypting parameters and submitting to batch...'
       })
+
+      // Submit encrypted intent
+      const result = await submitIntent(
+        intentParams,
+        SEPOLIA_CONTRACTS.INTENT_COLLECTOR,
+        address
+      )
 
       // Reset form on success
       setFormData({
-        budget: '',
-        tradesCount: '',
+        investmentAmount: '',
+        tradesCount: '10',
         amountPerTrade: '',
-        frequency: '',
+        frequency: '24',
         minPrice: '',
         maxPrice: '',
+        useAmountMode: false
       })
 
-      alert('DCA intent submitted successfully!')
+      toast({
+        title: 'Intent Submitted Successfully!',
+        description: `Intent ID: ${result.intentId?.toString() || 'Unknown'}`,
+      })
     } catch (error) {
       console.error('Failed to submit DCA intent:', error)
-      alert('Failed to submit DCA intent. Please try again.')
-    } finally {
-      setIsEncrypting(false)
+      toast({
+        title: 'Submission Failed',
+        description: error instanceof Error ? error.message : 'Unknown error occurred',
+        variant: 'destructive'
+      })
     }
-  }
+  }, [isConnected, address, validateForm, formData, submitIntent, toast])
+
+  // Calculate frequency display
+  const getFrequencyDisplay = useCallback((seconds: string): string => {
+    const secs = parseInt(seconds)
+    if (secs < 60) return `${secs}s`
+    if (secs < 3600) return `${Math.floor(secs / 60)}m`
+    if (secs < 86400) return `${Math.floor(secs / 3600)}h`
+    return `${Math.floor(secs / 86400)}d`
+  }, [])
+
+  // Format currency helper
+  const formatCurrency = useCallback((amount: number): string => {
+    return amount.toFixed(2)
+  }, [])
+
+  // Get available fund pool balance
+  const availableBalance = fundPoolBalance.isInitialized ? '[Encrypted Balance]' : '0 USDC'
 
   if (!isConnected) {
     return (
@@ -174,8 +225,8 @@ export function DCAForm() {
                   id="budget"
                   type="number"
                   placeholder="1000"
-                  value={formData.budget}
-                  onChange={(e) => handleInputChange('budget', e.target.value)}
+                  value={formData.investmentAmount}
+                  onChange={(e) => handleInputChange('investmentAmount', e.target.value)}
                   min="0"
                   step="0.01"
                 />
@@ -216,8 +267,8 @@ export function DCAForm() {
                   readOnly
                 />
                 <p className="text-xs text-muted-foreground">
-                  Automatically calculated: {formData.budget && formData.tradesCount ? 
-                    formatCurrency(parseFloat(formData.budget) / parseInt(formData.tradesCount)) : 
+                  Automatically calculated: {formData.investmentAmount && formData.tradesCount ? 
+                    formatCurrency(parseFloat(formData.investmentAmount) / parseInt(formData.tradesCount)) : 
                     'Enter budget and trades'
                   }
                 </p>
@@ -310,30 +361,15 @@ export function DCAForm() {
               </motion.div>
             </div>
 
-            {/* Error Display */}
-            {error && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="p-3 bg-red-50 border border-red-200 rounded-lg"
-              >
-                <p className="text-sm text-red-800">{error}</p>
-              </motion.div>
-            )}
 
             {/* Submit Button */}
             <Button
               type="submit"
               className="w-full"
-              disabled={isSubmitting || isEncrypting}
+              disabled={isSubmittingIntent}
               size="lg"
             >
-              {isEncrypting ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Encrypting Intent...
-                </>
-              ) : isSubmitting ? (
+              {isSubmittingIntent ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   Submitting to Batch...
@@ -346,15 +382,29 @@ export function DCAForm() {
               )}
             </Button>
 
-            <div className="text-center text-xs text-muted-foreground">
+            <div className="text-center text-xs text-muted-foreground space-y-1">
               <p>
                 Your intent will be encrypted and added to the next batch.
-                Execution depends on batch size (10 users) and your price conditions.
+              </p>
+              <p>
+                Execution requires {DCA_CONFIG.MIN_BATCH_SIZE}-{DCA_CONFIG.MAX_BATCH_SIZE} users and matching price conditions.
               </p>
             </div>
           </form>
         </CardContent>
       </Card>
+
+      {/* Deposit Modal */}
+      <DepositModal
+        isOpen={showDepositModal}
+        onClose={() => setShowDepositModal(false)}
+        onSuccess={() => {
+          toast({
+            title: 'Deposit Successful',
+            description: 'USDC deposited to FundPool. You can now create DCA intents.'
+          })
+        }}
+      />
     </motion.div>
   )
 }

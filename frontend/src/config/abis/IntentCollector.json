@@ -1,0 +1,98 @@
+[
+  {
+    "inputs": [
+      {"internalType": "uint256", "name": "budgetExt", "type": "uint256"},
+      {"internalType": "bytes", "name": "budgetProof", "type": "bytes"},
+      {"internalType": "uint256", "name": "tradesCountExt", "type": "uint256"},
+      {"internalType": "bytes", "name": "tradesCountProof", "type": "bytes"},
+      {"internalType": "uint256", "name": "amountPerTradeExt", "type": "uint256"},
+      {"internalType": "bytes", "name": "amountPerTradeProof", "type": "bytes"},
+      {"internalType": "uint256", "name": "frequencyExt", "type": "uint256"},
+      {"internalType": "bytes", "name": "frequencyProof", "type": "bytes"},
+      {"internalType": "uint256", "name": "minPriceExt", "type": "uint256"},
+      {"internalType": "bytes", "name": "minPriceProof", "type": "bytes"},
+      {"internalType": "uint256", "name": "maxPriceExt", "type": "uint256"},
+      {"internalType": "bytes", "name": "maxPriceProof", "type": "bytes"}
+    ],
+    "name": "submitIntent",
+    "outputs": [{"internalType": "uint256", "name": "intentId", "type": "uint256"}],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "checkBatchReady",
+    "outputs": [
+      {"internalType": "bool", "name": "isReady", "type": "bool"},
+      {"internalType": "uint256", "name": "batchId", "type": "uint256"},
+      {"internalType": "uint256[]", "name": "intentIds", "type": "uint256[]"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{"internalType": "uint256", "name": "intentId", "type": "uint256"}],
+    "name": "getIntent",
+    "outputs": [
+      {
+        "components": [
+          {"internalType": "uint256", "name": "budget", "type": "uint256"},
+          {"internalType": "uint256", "name": "tradesCount", "type": "uint256"},
+          {"internalType": "uint256", "name": "amountPerTrade", "type": "uint256"},
+          {"internalType": "uint256", "name": "frequency", "type": "uint256"},
+          {"internalType": "uint256", "name": "minPrice", "type": "uint256"},
+          {"internalType": "uint256", "name": "maxPrice", "type": "uint256"},
+          {"internalType": "address", "name": "user", "type": "address"},
+          {"internalType": "uint256", "name": "submittedAt", "type": "uint256"},
+          {"internalType": "uint256", "name": "batchId", "type": "uint256"},
+          {"internalType": "bool", "name": "isActive", "type": "bool"},
+          {"internalType": "bool", "name": "isProcessed", "type": "bool"}
+        ],
+        "internalType": "struct IntentCollector.EncryptedIntent",
+        "name": "intent",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{"internalType": "address", "name": "user", "type": "address"}],
+    "name": "getUserIntents",
+    "outputs": [{"internalType": "uint256[]", "name": "intentIds", "type": "uint256[]"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getBatchStats",
+    "outputs": [
+      {"internalType": "uint256", "name": "currentBatch", "type": "uint256"},
+      {"internalType": "uint256", "name": "pendingCount", "type": "uint256"},
+      {"internalType": "uint256", "name": "timeRemaining", "type": "uint256"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": true, "internalType": "uint256", "name": "intentId", "type": "uint256"},
+      {"indexed": true, "internalType": "address", "name": "user", "type": "address"},
+      {"indexed": true, "internalType": "uint256", "name": "batchId", "type": "uint256"},
+      {"indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256"}
+    ],
+    "name": "IntentSubmitted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": true, "internalType": "uint256", "name": "batchId", "type": "uint256"},
+      {"indexed": false, "internalType": "uint256", "name": "intentCount", "type": "uint256"},
+      {"indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256"}
+    ],
+    "name": "BatchReady",
+    "type": "event"
+  }
+]
