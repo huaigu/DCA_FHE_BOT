@@ -45,7 +45,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       // Sepolia testnet addresses
       mockPriceFeed = { address: "0x694AA1769357215DE4FAC081bf1f309aDC325306" }; // ETH/USD
       mockRouter = { address: "0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E" }; // Uniswap V3 SwapRouter
-      mockUSDC = { address: "0xA0b86a33E6417c8f6C89c35239E6C5B5E6b3d5f7" }; // Sepolia USDC (example)
+      mockUSDC = { address: "0xA0b86a33E6417c8f6C89c35239E6C5B5E6b3d5f7".toLowerCase() }; // Sepolia USDC (example)
       wethAddress = "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14"; // Sepolia WETH
     } else {
       throw new Error(`Network ${hre.network.name} not supported. Please configure contract addresses.`);

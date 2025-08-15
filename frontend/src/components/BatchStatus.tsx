@@ -66,7 +66,7 @@ export function BatchStatus() {
     }
   }
 
-  const getStatusIcon = (status: Batch['status']) => {
+  const getStatusIcon = (status: BatchStatus) => {
     switch (status) {
       case 'collecting':
         return <Users className="w-4 h-4 text-blue-500" />

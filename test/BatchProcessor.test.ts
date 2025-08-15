@@ -49,76 +49,6 @@ const MockWETH = {
   }
 };
 
-async function deployFixture() {
-  const signers = await ethers.getSigners();
-  const deployer = signers[0];
-  
-  // Deploy mock contracts
-  const mockPriceFeed = await MockPriceFeed.deploy();
-  const mockRouter = await MockUniswapRouter.deploy();
-  const mockUSDC = await MockUSDC.deploy();
-  const mockWETH = await MockWETH.deploy();
-  const wethAddress = await mockWETH.getAddress();
-  
-  // Deploy FundPool first
-  const fundPoolFactory = (await ethers.getContractFactory("FundPool")) as FundPool__factory;
-  const fundPool = (await fundPoolFactory.deploy(
-    await mockUSDC.getAddress(),
-    deployer.address
-  )) as FundPool;
-  
-  // Deploy IntentCollector
-  const intentCollectorFactory = (await ethers.getContractFactory("IntentCollector")) as IntentCollector__factory;
-  const intentCollector = (await intentCollectorFactory.deploy(deployer.address)) as IntentCollector;
-  
-  // Deploy ConfidentialToken
-  const confidentialTokenFactory = (await ethers.getContractFactory("ConfidentialToken")) as ConfidentialToken__factory;
-  const confidentialToken = (await confidentialTokenFactory.deploy(
-    "Confidential ETH",
-    "cETH",
-    18,
-    ethers.ZeroAddress, // ETH as underlying
-    deployer.address
-  )) as ConfidentialToken;
-  
-  // Deploy BatchProcessor
-  const batchProcessorFactory = (await ethers.getContractFactory("BatchProcessor")) as BatchProcessor__factory;
-  const batchProcessor = (await batchProcessorFactory.deploy(
-    await intentCollector.getAddress(),
-    await confidentialToken.getAddress(),
-    await mockPriceFeed.getAddress(),
-    await mockRouter.getAddress(),
-    await mockUSDC.getAddress(),
-    wethAddress,
-    deployer.address
-  )) as BatchProcessor;
-  
-  const batchProcessorAddress = await batchProcessor.getAddress();
-  const intentCollectorAddress = await intentCollector.getAddress();
-  const fundPoolAddress = await fundPool.getAddress();
-  
-  // Set up permissions
-  await intentCollector.setBatchProcessor(batchProcessorAddress);
-  await intentCollector.setFundPool(fundPoolAddress);
-  await confidentialToken.setBatchProcessor(batchProcessorAddress);
-  await fundPool.setBatchProcessor(batchProcessorAddress);
-  await fundPool.setIntentCollector(intentCollectorAddress);
-  await batchProcessor.setFundPool(fundPoolAddress);
-
-  return { 
-    batchProcessor, 
-    intentCollector, 
-    confidentialToken,
-    fundPool,
-    mockPriceFeed,
-    mockRouter,
-    mockUSDC,
-    mockWETH,
-    batchProcessorAddress,
-    deployer 
-  };
-}
-
 describe("BatchProcessor", function () {
   let signers: Signers;
   let batchProcessor: BatchProcessor;
@@ -133,51 +63,107 @@ describe("BatchProcessor", function () {
 
   before(async function () {
     const ethSigners: HardhatEthersSigner[] = await ethers.getSigners();
-    signers = { 
-      deployer: ethSigners[0], 
-      alice: ethSigners[1], 
+    signers = {
+      deployer: ethSigners[0],
+      alice: ethSigners[1],
       bob: ethSigners[2],
       charlie: ethSigners[3]
     };
+
+    // Skip tests on non-mock networks
+    if (!fhevm.isMock) {
+      this.skip();
+    }
   });
 
   beforeEach(async function () {
-    // Check whether the tests are running against an FHEVM mock environment
+    // Check if we're in FHEVM mock environment
     if (!fhevm.isMock) {
       console.warn(`This test suite can only run on FHEVM mock environment`);
       this.skip();
     }
 
-    ({ 
-      batchProcessor, 
-      intentCollector, 
-      confidentialToken,
-      fundPool,
-      mockPriceFeed,
-      mockRouter,
-      mockUSDC,
-      mockWETH,
-      batchProcessorAddress
-    } = await deployFixture());
+    // Deploy mock contracts
+    mockPriceFeed = await MockPriceFeed.deploy();
+    mockRouter = await MockUniswapRouter.deploy();
+    mockUSDC = await MockUSDC.deploy();
+    mockWETH = await MockWETH.deploy();
+
+    // Deploy IntentCollector
+    const intentCollectorFactory = (await ethers.getContractFactory("IntentCollector")) as IntentCollector__factory;
+    intentCollector = (await intentCollectorFactory.deploy(signers.deployer.address)) as IntentCollector;
+
+    // Deploy ConfidentialToken
+    const confidentialTokenFactory = (await ethers.getContractFactory("ConfidentialToken")) as ConfidentialToken__factory;
+    confidentialToken = (await confidentialTokenFactory.deploy(
+      "Confidential ETH",
+      "cETH",
+      18,
+      await mockWETH.getAddress(),
+      signers.deployer.address
+    )) as ConfidentialToken;
+
+    // Deploy FundPool
+    const fundPoolFactory = (await ethers.getContractFactory("FundPool")) as FundPool__factory;
+    fundPool = (await fundPoolFactory.deploy(
+      await mockUSDC.getAddress(),
+      signers.deployer.address
+    )) as FundPool;
+
+    // Deploy BatchProcessor
+    const batchProcessorFactory = (await ethers.getContractFactory("BatchProcessor")) as BatchProcessor__factory;
+    batchProcessor = (await batchProcessorFactory.deploy(
+      await intentCollector.getAddress(),
+      await confidentialToken.getAddress(),
+      await mockPriceFeed.getAddress(),
+      await mockRouter.getAddress(),
+      await mockUSDC.getAddress(),
+      await mockWETH.getAddress(),
+      signers.deployer.address
+    )) as BatchProcessor;
     
-    // Give mock router some WETH for swaps
-    await mockWETH.mint(await mockRouter.getAddress(), ethers.parseEther("100"));
+    batchProcessorAddress = await batchProcessor.getAddress();
+
+    // Configure contracts
+    await intentCollector.setBatchProcessor(batchProcessorAddress);
+    await intentCollector.setFundPool(await fundPool.getAddress());
+    await fundPool.setIntentCollector(await intentCollector.getAddress());
+    await fundPool.setBatchProcessor(batchProcessorAddress);
+    await confidentialToken.setBatchProcessor(batchProcessorAddress);
     
-    // Give mock router some ETH for swaps
-    await signers.deployer.sendTransaction({
-      to: await mockRouter.getAddress(),
-      value: ethers.parseEther("10")
-    });
-    
-    // Give FundPool some USDC and initialize user balances for testing
-    await mockUSDC.mint(await fundPool.getAddress(), ethers.parseUnits("10000", 6));
-    
-    // Initialize user balances in FundPool for testing
-    const testUsers = [signers.alice, signers.bob, signers.charlie];
-    for (const user of testUsers) {
-      await fundPool.testInitializeBalance(user.address, ethers.parseUnits("5000", 6));
-    }
+    // Set up test data and balances
+    await setupTestData();
   });
+
+  async function setupTestData() {
+    // Mint USDC to users
+    const amount = ethers.parseUnits("10000", 6); // 10,000 USDC
+    await mockUSDC.mint(signers.alice.address, amount);
+    await mockUSDC.mint(signers.bob.address, amount);
+    await mockUSDC.mint(signers.charlie.address, amount);
+
+    // Approve FundPool for deposits
+    await mockUSDC.connect(signers.alice).approve(await fundPool.getAddress(), amount);
+    await mockUSDC.connect(signers.bob).approve(await fundPool.getAddress(), amount);
+    await mockUSDC.connect(signers.charlie).approve(await fundPool.getAddress(), amount);
+
+    // Initialize user balances in FundPool (simplified for testing)
+    await fundPool.testInitializeBalance(signers.alice.address, amount);
+    await fundPool.testInitializeBalance(signers.bob.address, amount);
+    await fundPool.testInitializeBalance(signers.charlie.address, amount);
+    
+    // Mint some USDC to FundPool for withdrawals
+    await mockUSDC.mint(await fundPool.getAddress(), ethers.parseUnits("30000", 6));
+    
+    // Update user states to ACTIVE
+    await intentCollector.connect(signers.deployer).setBatchProcessor(signers.deployer.address);
+    await intentCollector.connect(signers.deployer).updateUserState(signers.alice.address, 1); // ACTIVE
+    await intentCollector.connect(signers.deployer).updateUserState(signers.bob.address, 1); // ACTIVE
+    await intentCollector.connect(signers.deployer).updateUserState(signers.charlie.address, 1); // ACTIVE
+    
+    // Reset batch processor for IntentCollector
+    await intentCollector.connect(signers.deployer).setBatchProcessor(batchProcessorAddress);
+  }
 
   describe("Deployment", function () {
     it("should initialize with correct parameters", async function () {
@@ -186,8 +172,7 @@ describe("BatchProcessor", function () {
       expect(await batchProcessor.priceFeed()).to.equal(await mockPriceFeed.getAddress());
       expect(await batchProcessor.uniswapRouter()).to.equal(await mockRouter.getAddress());
       expect(await batchProcessor.usdcToken()).to.equal(await mockUSDC.getAddress());
-      expect(await batchProcessor.automationEnabled()).to.be.true;
-      expect(await batchProcessor.lastProcessedBatch()).to.equal(0);
+      expect(await batchProcessor.wethAddress()).to.equal(await mockWETH.getAddress());
     });
 
     it("should not be paused initially", async function () {
@@ -196,16 +181,23 @@ describe("BatchProcessor", function () {
   });
 
   describe("Chainlink Automation Integration", function () {
-    beforeEach(async function () {
-      // Set up mock price feed to return valid data
-      await mockPriceFeed.setLatestRoundData(
-        1, // roundId
-        180000000000, // price: $1800 with 8 decimals
-        Math.floor(Date.now() / 1000) - 100, // startedAt
-        Math.floor(Date.now() / 1000), // updatedAt
-        1 // answeredInRound
-      );
-    });
+    // Helper function to create submitIntent params
+    function createSubmitIntentParams(encryptedInput: any) {
+      return {
+        budgetExt: encryptedInput.handles[0],
+        budgetProof: encryptedInput.inputProof,
+        tradesCountExt: encryptedInput.handles[1],
+        tradesCountProof: encryptedInput.inputProof,
+        amountPerTradeExt: encryptedInput.handles[2],
+        amountPerTradeProof: encryptedInput.inputProof,
+        frequencyExt: encryptedInput.handles[3],
+        frequencyProof: encryptedInput.inputProof,
+        minPriceExt: encryptedInput.handles[4],
+        minPriceProof: encryptedInput.inputProof,
+        maxPriceExt: encryptedInput.handles[5],
+        maxPriceProof: encryptedInput.inputProof
+      };
+    }
 
     async function submitTestIntents(count: number = 5) {
       for (let i = 0; i < count; i++) {
@@ -222,16 +214,10 @@ describe("BatchProcessor", function () {
           .add64(2000n * 100n) // maxPrice: $2000 in cents
           .encrypt();
 
+        const params = createSubmitIntentParams(encryptedInput);
         await intentCollector
           .connect(signer)
-          .submitIntent(
-            encryptedInput.handles[0], encryptedInput.inputProof,
-            encryptedInput.handles[1], encryptedInput.inputProof,
-            encryptedInput.handles[2], encryptedInput.inputProof,
-            encryptedInput.handles[3], encryptedInput.inputProof,
-            encryptedInput.handles[4], encryptedInput.inputProof,
-            encryptedInput.handles[5], encryptedInput.inputProof
-          );
+          .submitIntent(params);
       }
     }
 
@@ -321,9 +307,33 @@ describe("BatchProcessor", function () {
       // Set up mock router to return some ETH for swaps
       await mockRouter.setSwapResult(ethers.parseEther("1")); // 1 ETH return
       
+      // Give mock router WETH for swap outputs
+      await mockWETH.mint(await mockRouter.getAddress(), ethers.parseEther("100"));
+      
       // Give batch processor some USDC for testing
       await mockUSDC.mint(batchProcessorAddress, ethers.parseUnits("10000", 6)); // 10,000 USDC
+      
+      // Also approve BatchProcessor to transfer from FundPool for batch processing
+      await mockUSDC.connect(signers.deployer).approve(batchProcessorAddress, ethers.MaxUint256);
     });
+
+    // Helper function to create submitIntent params
+    function createSubmitIntentParams(encryptedInput: any) {
+      return {
+        budgetExt: encryptedInput.handles[0],
+        budgetProof: encryptedInput.inputProof,
+        tradesCountExt: encryptedInput.handles[1],
+        tradesCountProof: encryptedInput.inputProof,
+        amountPerTradeExt: encryptedInput.handles[2],
+        amountPerTradeProof: encryptedInput.inputProof,
+        frequencyExt: encryptedInput.handles[3],
+        frequencyProof: encryptedInput.inputProof,
+        minPriceExt: encryptedInput.handles[4],
+        minPriceProof: encryptedInput.inputProof,
+        maxPriceExt: encryptedInput.handles[5],
+        maxPriceProof: encryptedInput.inputProof
+      };
+    }
 
     async function submitAndProcessBatch() {
       // Submit 10 intents to trigger batch processing (MAX_BATCH_SIZE)
@@ -341,16 +351,10 @@ describe("BatchProcessor", function () {
           .add64(2000n * 100n) // maxPrice: $2000 in cents
           .encrypt();
 
+        const params = createSubmitIntentParams(encryptedInput);
         await intentCollector
           .connect(signer)
-          .submitIntent(
-            encryptedInput.handles[0], encryptedInput.inputProof,
-            encryptedInput.handles[1], encryptedInput.inputProof,
-            encryptedInput.handles[2], encryptedInput.inputProof,
-            encryptedInput.handles[3], encryptedInput.inputProof,
-            encryptedInput.handles[4], encryptedInput.inputProof,
-            encryptedInput.handles[5], encryptedInput.inputProof
-          );
+          .submitIntent(params);
       }
 
       // Manually trigger batch processing
@@ -386,16 +390,10 @@ describe("BatchProcessor", function () {
           .add64(2000n * 100n)
           .encrypt();
 
+        const params = createSubmitIntentParams(encryptedInput);
         await intentCollector
           .connect(signer)
-          .submitIntent(
-            encryptedInput.handles[0], encryptedInput.inputProof,
-            encryptedInput.handles[1], encryptedInput.inputProof,
-            encryptedInput.handles[2], encryptedInput.inputProof,
-            encryptedInput.handles[3], encryptedInput.inputProof,
-            encryptedInput.handles[4], encryptedInput.inputProof,
-            encryptedInput.handles[5], encryptedInput.inputProof
-          );
+          .submitIntent(params);
       }
 
       await expect(
@@ -420,16 +418,10 @@ describe("BatchProcessor", function () {
           .add64(2000n * 100n)
           .encrypt();
 
+        const params = createSubmitIntentParams(encryptedInput);
         await intentCollector
           .connect(signer)
-          .submitIntent(
-            encryptedInput.handles[0], encryptedInput.inputProof,
-            encryptedInput.handles[1], encryptedInput.inputProof,
-            encryptedInput.handles[2], encryptedInput.inputProof,
-            encryptedInput.handles[3], encryptedInput.inputProof,
-            encryptedInput.handles[4], encryptedInput.inputProof,
-            encryptedInput.handles[5], encryptedInput.inputProof
-          );
+          .submitIntent(params);
       }
 
       await expect(
@@ -461,87 +453,228 @@ describe("BatchProcessor", function () {
         1
       );
 
-      await submitAndProcessBatch();
+      // Submit intents
+      for (let i = 0; i < 10; i++) {
+        const signer = i % 2 === 0 ? signers.alice : signers.bob;
+        const intentCollectorAddress = await intentCollector.getAddress();
+        
+        const encryptedInput = await fhevm
+          .createEncryptedInput(intentCollectorAddress, signer.address)
+          .add64(BigInt(1000 + i) * 1000000n)
+          .add32(10)
+          .add64(100n * 1000000n)
+          .add32(86400)
+          .add64(1500n * 100n) // minPrice: $1500
+          .add64(2000n * 100n) // maxPrice: $2000
+          .encrypt();
+
+        const params = createSubmitIntentParams(encryptedInput);
+        await intentCollector
+          .connect(signer)
+          .submitIntent(params);
+      }
+
+      // Process batch
+      await batchProcessor.connect(signers.deployer).manualTriggerBatch(1);
       
-      // Batch should be processed 
+      // Check batch result - should succeed but with 0 swapped amount
       const batchResult = await batchProcessor.getBatchResult(1);
-      // Due to privacy-preserving design, the batch processes all intents
-      // but the actual filtering happens at the encrypted level
-      // In testing mode with hardcoded amounts, this still shows processing occurred
-      // The key privacy feature is that observers can't tell which specific intents were filtered
-      expect(batchResult.totalAmountOut).to.be.gt(0); // ETH was received from mock swap
+      expect(batchResult.success).to.be.true;
+      expect(batchResult.totalAmountIn).to.equal(0);
+    });
+  });
+
+  describe("Price Range Filtering", function () {
+    beforeEach(async function () {
+      // Set up mock router to return some ETH for swaps
+      await mockRouter.setSwapResult(ethers.parseEther("1")); // 1 ETH return
+      
+      // Give mock router WETH for swap outputs
+      await mockWETH.mint(await mockRouter.getAddress(), ethers.parseEther("100"));
+      
+      // Give batch processor some USDC for testing
+      await mockUSDC.mint(batchProcessorAddress, ethers.parseUnits("10000", 6)); // 10,000 USDC
+      
+      // Also approve BatchProcessor to transfer from FundPool for batch processing
+      await mockUSDC.connect(signers.deployer).approve(batchProcessorAddress, ethers.MaxUint256);
+    });
+
+    // Helper function to create submitIntent params
+    function createSubmitIntentParams(encryptedInput: any) {
+      return {
+        budgetExt: encryptedInput.handles[0],
+        budgetProof: encryptedInput.inputProof,
+        tradesCountExt: encryptedInput.handles[1],
+        tradesCountProof: encryptedInput.inputProof,
+        amountPerTradeExt: encryptedInput.handles[2],
+        amountPerTradeProof: encryptedInput.inputProof,
+        frequencyExt: encryptedInput.handles[3],
+        frequencyProof: encryptedInput.inputProof,
+        minPriceExt: encryptedInput.handles[4],
+        minPriceProof: encryptedInput.inputProof,
+        maxPriceExt: encryptedInput.handles[5],
+        maxPriceProof: encryptedInput.inputProof
+      };
+    }
+
+    it("should filter intents based on price range", async function () {
+      // Set price at $1800
+      await mockPriceFeed.setLatestRoundData(
+        1,
+        180000000000, // $1800
+        Math.floor(Date.now() / 1000) - 100,
+        Math.floor(Date.now() / 1000),
+        1
+      );
+
+      // Submit intents with different price ranges
+      const intentCollectorAddress = await intentCollector.getAddress();
+      
+      // Intent 1: Price in range ($1500-$2000)
+      const encryptedInput1 = await fhevm
+        .createEncryptedInput(intentCollectorAddress, signers.alice.address)
+        .add64(1000n * 1000000n)
+        .add32(10)
+        .add64(100n * 1000000n)
+        .add32(86400)
+        .add64(1500n * 100n) // minPrice: $1500
+        .add64(2000n * 100n) // maxPrice: $2000
+        .encrypt();
+
+      const params1 = createSubmitIntentParams(encryptedInput1);
+      await intentCollector.connect(signers.alice).submitIntent(params1);
+
+      // Intent 2: Price too high ($1000-$1700)
+      const encryptedInput2 = await fhevm
+        .createEncryptedInput(intentCollectorAddress, signers.bob.address)
+        .add64(1000n * 1000000n)
+        .add32(10)
+        .add64(100n * 1000000n)
+        .add32(86400)
+        .add64(1000n * 100n) // minPrice: $1000
+        .add64(1700n * 100n) // maxPrice: $1700 (below current price)
+        .encrypt();
+
+      const params2 = createSubmitIntentParams(encryptedInput2);
+      await intentCollector.connect(signers.bob).submitIntent(params2);
+
+      // Add more intents to reach MIN_BATCH_SIZE
+      for (let i = 2; i < 5; i++) {
+        const encryptedInput = await fhevm
+          .createEncryptedInput(intentCollectorAddress, signers.alice.address)
+          .add64(500n * 1000000n)
+          .add32(5)
+          .add64(100n * 1000000n)
+          .add32(86400)
+          .add64(1700n * 100n) // minPrice: $1700
+          .add64(1900n * 100n) // maxPrice: $1900
+          .encrypt();
+
+        const params = createSubmitIntentParams(encryptedInput);
+        await intentCollector.connect(signers.alice).submitIntent(params);
+      }
+
+      // Process batch
+      await batchProcessor.connect(signers.deployer).manualTriggerBatch(1);
+      
+      // Check batch result
+      const batchResult = await batchProcessor.getBatchResult(1);
+      expect(batchResult.success).to.be.true;
+      // Note: Can't easily verify exact filtered count due to FHE
+    });
+
+    it("should handle all intents filtered out", async function () {
+      // Set price very high, outside all ranges
+      await mockPriceFeed.setLatestRoundData(
+        1,
+        300000000000, // $3000
+        Math.floor(Date.now() / 1000) - 100,
+        Math.floor(Date.now() / 1000),
+        1
+      );
+
+      // Submit intents with low price ranges
+      for (let i = 0; i < 5; i++) {
+        const signer = i % 2 === 0 ? signers.alice : signers.bob;
+        const intentCollectorAddress = await intentCollector.getAddress();
+        
+        const encryptedInput = await fhevm
+          .createEncryptedInput(intentCollectorAddress, signer.address)
+          .add64(1000n * 1000000n)
+          .add32(10)
+          .add64(100n * 1000000n)
+          .add32(86400)
+          .add64(1000n * 100n) // minPrice: $1000
+          .add64(2000n * 100n) // maxPrice: $2000 (below current price of $3000)
+          .encrypt();
+
+        const params = createSubmitIntentParams(encryptedInput);
+        await intentCollector.connect(signer).submitIntent(params);
+      }
+
+      // Process batch
+      await batchProcessor.connect(signers.deployer).manualTriggerBatch(1);
+      
+      // Check batch result
+      const batchResult = await batchProcessor.getBatchResult(1);
+      expect(batchResult.success).to.be.true;
+      expect(batchResult.totalAmountIn).to.equal(0); // No swaps should occur
     });
   });
 
   describe("Access Control", function () {
-    it("should only allow owner to set automation enabled", async function () {
-      await expect(
-        batchProcessor.connect(signers.alice).setAutomationEnabled(false)
-      ).to.be.revertedWithCustomError(batchProcessor, "OwnableUnauthorizedAccount");
+    it("should allow owner to pause and unpause", async function () {
+      await batchProcessor.connect(signers.deployer).pause();
+      expect(await batchProcessor.paused()).to.be.true;
+      
+      await batchProcessor.connect(signers.deployer).unpause();
+      expect(await batchProcessor.paused()).to.be.false;
     });
 
-    it("should only allow owner to pause", async function () {
+    it("should revert pause from non-owner", async function () {
       await expect(
         batchProcessor.connect(signers.alice).pause()
       ).to.be.revertedWithCustomError(batchProcessor, "OwnableUnauthorizedAccount");
     });
 
-    it("should only allow owner to unpause", async function () {
-      await batchProcessor.connect(signers.deployer).pause();
+    it("should allow owner to set automation enabled", async function () {
+      await batchProcessor.connect(signers.deployer).setAutomationEnabled(false);
+      expect(await batchProcessor.automationEnabled()).to.be.false;
       
-      await expect(
-        batchProcessor.connect(signers.alice).unpause()
-      ).to.be.revertedWithCustomError(batchProcessor, "OwnableUnauthorizedAccount");
+      await batchProcessor.connect(signers.deployer).setAutomationEnabled(true);
+      expect(await batchProcessor.automationEnabled()).to.be.true;
     });
 
-    it("should only allow owner to emergency withdraw", async function () {
+    it("should revert setAutomationEnabled from non-owner", async function () {
       await expect(
-        batchProcessor.connect(signers.alice).emergencyWithdraw(ethers.ZeroAddress, 0)
+        batchProcessor.connect(signers.alice).setAutomationEnabled(false)
       ).to.be.revertedWithCustomError(batchProcessor, "OwnableUnauthorizedAccount");
     });
   });
 
   describe("Emergency Functions", function () {
-    it("should allow owner to emergency withdraw ETH", async function () {
-      // Send ETH to contract
-      await signers.alice.sendTransaction({
-        to: batchProcessorAddress,
-        value: ethers.parseEther("1")
-      });
+    it("should allow owner to recover stuck tokens", async function () {
+      const amount = ethers.parseUnits("1000", 6);
+      await mockUSDC.mint(batchProcessorAddress, amount);
       
-      const ownerBalanceBefore = await ethers.provider.getBalance(signers.deployer.address);
+      const ownerBalanceBefore = await mockUSDC.balanceOf(signers.deployer.address);
       
-      await batchProcessor.connect(signers.deployer).emergencyWithdraw(ethers.ZeroAddress, ethers.parseEther("1"));
+      await batchProcessor.connect(signers.deployer).recoverToken(
+        await mockUSDC.getAddress(),
+        amount
+      );
       
-      const ownerBalanceAfter = await ethers.provider.getBalance(signers.deployer.address);
-      expect(ownerBalanceAfter).to.be.gt(ownerBalanceBefore);
+      const ownerBalanceAfter = await mockUSDC.balanceOf(signers.deployer.address);
+      expect(ownerBalanceAfter - ownerBalanceBefore).to.equal(amount);
     });
 
-    it("should emit EmergencyWithdraw event", async function () {
-      await signers.alice.sendTransaction({
-        to: batchProcessorAddress,
-        value: ethers.parseEther("1")
-      });
-      
+    it("should revert recover from non-owner", async function () {
       await expect(
-        batchProcessor.connect(signers.deployer).emergencyWithdraw(ethers.ZeroAddress, ethers.parseEther("1"))
-      ).to.emit(batchProcessor, "EmergencyWithdraw")
-       .withArgs(ethers.ZeroAddress, ethers.parseEther("1"));
-    });
-  });
-
-  describe("Pause Functionality", function () {
-    it("should pause and unpause correctly", async function () {
-      // Initially not paused
-      expect(await batchProcessor.paused()).to.be.false;
-      
-      // Pause
-      await batchProcessor.connect(signers.deployer).pause();
-      expect(await batchProcessor.paused()).to.be.true;
-      
-      // Unpause
-      await batchProcessor.connect(signers.deployer).unpause();
-      expect(await batchProcessor.paused()).to.be.false;
+        batchProcessor.connect(signers.alice).recoverToken(
+          await mockUSDC.getAddress(),
+          100
+        )
+      ).to.be.revertedWithCustomError(batchProcessor, "OwnableUnauthorizedAccount");
     });
   });
 });

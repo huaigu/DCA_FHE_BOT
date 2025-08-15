@@ -1,24 +1,27 @@
 // Contract addresses and configuration for Sepolia testnet
 export const SEPOLIA_CONTRACTS = {
-  // Main DCA system contracts (to be deployed)
-  FUND_POOL: process.env.NEXT_PUBLIC_FUND_POOL_ADDRESS || '',
-  INTENT_COLLECTOR: process.env.NEXT_PUBLIC_INTENT_COLLECTOR_ADDRESS || '',
-  CONFIDENTIAL_TOKEN: process.env.NEXT_PUBLIC_CONFIDENTIAL_TOKEN_ADDRESS || '',
-  BATCH_PROCESSOR: process.env.NEXT_PUBLIC_BATCH_PROCESSOR_ADDRESS || '',
+  // Main DCA system contracts (deployed on Sepolia)
+  FUND_POOL: process.env.NEXT_PUBLIC_FUND_POOL_ADDRESS || '0xfd782b3Ca5Ef7Ac8B403afA3227DC528228E42B8',
+  INTENT_COLLECTOR: process.env.NEXT_PUBLIC_INTENT_COLLECTOR_ADDRESS || '0x9cf2477d9BB16a1a845D25b151F4d3383FbeA82E',
+  CONFIDENTIAL_TOKEN: process.env.NEXT_PUBLIC_CONFIDENTIAL_TOKEN_ADDRESS || '0x3b6DE8eAea838Da47Eb42Cd5C38dfdC96eBE7BF7',
+  BATCH_PROCESSOR: process.env.NEXT_PUBLIC_BATCH_PROCESSOR_ADDRESS || '0x1283a47720607d239aE7d15E5F5991673E36a6BA',
   
-  // External tokens on Sepolia
-  WETH: '0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9',
-  USDC: '0x1c7d4b196cb0c7b01d743fbc6116a902379c7238',
+  // External contracts on Sepolia
+  WETH: process.env.NEXT_PUBLIC_WETH_ADDRESS || '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14',
+  USDC: process.env.NEXT_PUBLIC_USDC_ADDRESS || '0xa0b86a33e6417c8f6c89c35239e6c5b5e6b3d5f7',
   
-  // Uniswap V2 Router on Sepolia
-  UNISWAP_ROUTER: '0xC532a74256D3Db42D0Bf7a0400fEFDbad7694008',
+  // Uniswap V3 Router on Sepolia (updated to V3)
+  UNISWAP_ROUTER: process.env.NEXT_PUBLIC_UNISWAP_ROUTER_ADDRESS || '0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E',
+  
+  // Chainlink Price Feed (ETH/USD) on Sepolia  
+  PRICE_FEED: process.env.NEXT_PUBLIC_PRICE_FEED_ADDRESS || '0x694AA1769357215DE4FAC081bf1f309aDC325306',
 } as const;
 
 // Network configuration
 export const SEPOLIA_CONFIG = {
   chainId: 11155111,
   name: 'Sepolia',
-  rpcUrl: process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || 'https://sepolia.infura.io/v3/YOUR_API_KEY',
+  rpcUrl: process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || 'https://sepolia.infura.io/v3/126e2978c6db47b7b116c07e4ba787e9',
   blockExplorer: 'https://sepolia.etherscan.io',
 } as const;
 

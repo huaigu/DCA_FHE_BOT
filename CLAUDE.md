@@ -49,9 +49,10 @@ The system implements encrypted DCA strategies with dynamic price conditions:
 npm install
 
 # Set required environment variables
-npx hardhat vars set MNEMONIC
-npx hardhat vars set INFURA_API_KEY
-npx hardhat vars set ETHERSCAN_API_KEY  # Optional for verification
+npx hardhat vars set PRIVATE_KEY      # Your private key for Sepolia deployment (without 0x)
+npx hardhat vars set INFURA_API_KEY   # Your Infura API key for Sepolia RPC
+npx hardhat vars set ETHERSCAN_API_KEY  # Optional for contract verification
+npx hardhat vars set MNEMONIC         # Optional, only needed for local development
 ```
 
 ### Development Workflow

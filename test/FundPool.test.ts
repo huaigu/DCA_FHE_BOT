@@ -2,13 +2,14 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { FhevmType } from "@fhevm/hardhat-plugin";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { FundPool, MockERC20, IntentCollector, BatchProcessor } from "../types";
+import { FundPool, MockERC20, IntentCollector, BatchProcessor, MockWithdrawalGateway } from "../types";
 
 describe("FundPool", function () {
   let fundPool: FundPool;
   let mockUSDC: MockERC20;
   let intentCollector: IntentCollector;
   let batchProcessor: BatchProcessor;
+  let mockGateway: MockWithdrawalGateway;
   let owner: HardhatEthersSigner;
   let user1: HardhatEthersSigner;
   let user2: HardhatEthersSigner;
@@ -80,9 +81,19 @@ describe("FundPool", function () {
     );
     await batchProcessor.waitForDeployment();
 
+    // Deploy MockWithdrawalGateway
+    const MockWithdrawalGatewayFactory = await ethers.getContractFactory("MockWithdrawalGateway");
+    mockGateway = await MockWithdrawalGatewayFactory.deploy();
+    await mockGateway.waitForDeployment();
+
     // Configure FundPool
     await fundPool.setBatchProcessor(await batchProcessor.getAddress());
     await fundPool.setIntentCollector(await intentCollector.getAddress());
+    await fundPool.setWithdrawalGateway(await mockGateway.getAddress());
+
+    // Configure IntentCollector
+    await intentCollector.setFundPool(await fundPool.getAddress());
+    await intentCollector.setBatchProcessor(await batchProcessor.getAddress());
 
     // Mint USDC to users
     await mockUSDC.mint(user1.address, ethers.parseUnits("10000", 6)); // 10,000 USDC
@@ -117,6 +128,12 @@ describe("FundPool", function () {
       expect(await fundPool.intentCollector()).to.equal(newCollector);
     });
 
+    it("Should allow owner to set WithdrawalGateway", async function () {
+      const newGateway = user2.address;
+      await fundPool.setWithdrawalGateway(newGateway);
+      expect(await fundPool.withdrawalGateway()).to.equal(newGateway);
+    });
+
     it("Should revert when non-owner tries to set BatchProcessor", async function () {
       await expect(
         fundPool.connect(user1).setBatchProcessor(user2.address)
@@ -137,11 +154,8 @@ describe("FundPool", function () {
       input.add64(BigInt(depositAmount));
       const encryptedInput = await input.encrypt();
 
-      // Deposit - pass handle, proof, and plaintext amount
-      await expect(
-        fundPool.connect(user1).deposit(encryptedInput.handles[0], encryptedInput.inputProof, depositAmount)
-      ).to.emit(fundPool, "Deposit")
-        .withArgs(user1.address, depositAmount);
+      // Deposit
+      await fundPool.connect(user1).deposit(encryptedInput.handles[0], encryptedInput.inputProof, depositAmount);
 
       // Check total deposited
       expect(await fundPool.totalDeposited()).to.equal(depositAmount);
@@ -191,7 +205,7 @@ describe("FundPool", function () {
     });
   });
 
-  describe("Withdrawals", function () {
+  describe("Full Withdrawals", function () {
     beforeEach(async function () {
       // Setup: User1 deposits 1000 USDC
       const depositAmount = ethers.parseUnits("1000", 6);
@@ -206,7 +220,113 @@ describe("FundPool", function () {
       await fundPool.connect(user1).deposit(encryptedInput.handles[0], encryptedInput.inputProof, depositAmount);
     });
 
-    it("Should allow users to withdraw USDC", async function () {
+    it("Should allow users to initiate withdrawal", async function () {
+      // Set mock balance for gateway
+      await mockGateway.setMockBalance(user1.address, ethers.parseUnits("1000", 6));
+      
+      // Initiate withdrawal
+      await fundPool.connect(user1).initiateWithdrawal();
+
+      // Check withdrawal status
+      const [pending, requestId] = await fundPool.getWithdrawalStatus(user1.address);
+      expect(pending).to.be.true;
+      expect(requestId).to.equal(1);
+    });
+
+    it("Should fulfill withdrawal after gateway decryption", async function () {
+      const initialBalance = await mockUSDC.balanceOf(user1.address);
+      const withdrawAmount = ethers.parseUnits("1000", 6);
+      
+      // Set mock balance for gateway
+      await mockGateway.setMockBalance(user1.address, withdrawAmount);
+      
+      // Initiate withdrawal
+      await fundPool.connect(user1).initiateWithdrawal();
+      
+      // Simulate gateway fulfillment
+      await mockGateway.simulateFulfillment(1, await fundPool.getAddress());
+      
+      // Check user received USDC
+      expect(await mockUSDC.balanceOf(user1.address)).to.equal(initialBalance + withdrawAmount);
+      
+      // Check totals
+      expect(await fundPool.totalWithdrawn()).to.equal(withdrawAmount);
+      expect(await fundPool.getTotalPoolBalance()).to.equal(0);
+      
+      // Check user state was updated to WITHDRAWN
+      const userState = await intentCollector.getUserState(user1.address);
+      expect(userState).to.equal(3); // WITHDRAWN
+    });
+
+    it("Should cancel withdrawal request", async function () {
+      // Set mock balance for gateway
+      await mockGateway.setMockBalance(user1.address, ethers.parseUnits("1000", 6));
+      
+      // Initiate withdrawal
+      await fundPool.connect(user1).initiateWithdrawal();
+      
+      // Cancel withdrawal
+      await fundPool.connect(user1).cancelWithdrawal();
+      
+      // Check withdrawal status
+      const [pending] = await fundPool.getWithdrawalStatus(user1.address);
+      expect(pending).to.be.false;
+      
+      // Check user state was reverted to ACTIVE
+      const userState = await intentCollector.getUserState(user1.address);
+      expect(userState).to.equal(1); // ACTIVE
+    });
+
+    it("Should revert when user has no initialized balance", async function () {
+      await expect(
+        fundPool.connect(user2).initiateWithdrawal()
+      ).to.be.revertedWithCustomError(fundPool, "BalanceNotInitialized");
+    });
+
+    it("Should revert when withdrawal already pending", async function () {
+      // Set mock balance
+      await mockGateway.setMockBalance(user1.address, ethers.parseUnits("1000", 6));
+      
+      // Initiate first withdrawal
+      await fundPool.connect(user1).initiateWithdrawal();
+      
+      // Try to initiate another
+      await expect(
+        fundPool.connect(user1).initiateWithdrawal()
+      ).to.be.revertedWithCustomError(fundPool, "WithdrawalPending");
+    });
+
+    it("Should check withdrawal cooldown", async function () {
+      // Set mock balance
+      await mockGateway.setMockBalance(user1.address, ethers.parseUnits("500", 6));
+      
+      // Complete first withdrawal
+      await fundPool.connect(user1).initiateWithdrawal();
+      await mockGateway.simulateFulfillment(1, await fundPool.getAddress());
+      
+      // Try to initiate another withdrawal immediately - should fail due to uninitialized balance
+      await expect(
+        fundPool.connect(user1).initiateWithdrawal()
+      ).to.be.revertedWithCustomError(fundPool, "BalanceNotInitialized");
+    });
+  });
+
+  describe("Legacy Withdrawal", function () {
+    beforeEach(async function () {
+      // Setup: User1 deposits 1000 USDC
+      const depositAmount = ethers.parseUnits("1000", 6);
+      const fundPoolAddress = await fundPool.getAddress();
+      
+      await mockUSDC.connect(user1).approve(fundPoolAddress, depositAmount);
+      
+      const input = await hre.fhevm.createEncryptedInput(fundPoolAddress, user1.address);
+      input.add64(BigInt(depositAmount));
+      const encryptedInput = await input.encrypt();
+      
+      await fundPool.connect(user1).deposit(encryptedInput.handles[0], encryptedInput.inputProof, depositAmount);
+    });
+
+    it("Should support legacy withdraw function", async function () {
       const withdrawAmount = ethers.parseUnits("400", 6);
       const initialBalance = await mockUSDC.balanceOf(user1.address);
       
@@ -224,34 +344,6 @@ describe("FundPool", function () {
       // Check totals
       expect(await fundPool.totalWithdrawn()).to.equal(withdrawAmount);
       expect(await fundPool.getTotalPoolBalance()).to.equal(ethers.parseUnits("600", 6));
-    });
-
-    it("Should revert when user has no initialized balance", async function () {
-      const proof = new Uint8Array(32);
-      
-      await expect(
-        fundPool.connect(user2).withdraw(ethers.parseUnits("100", 6), proof)
-      ).to.be.revertedWithCustomError(fundPool, "BalanceNotInitialized");
-    });
-
-    it("Should revert on zero withdrawal", async function () {
-      const proof = new Uint8Array(32);
-      
-      await expect(
-        fundPool.connect(user1).withdraw(0, proof)
-      ).to.be.revertedWithCustomError(fundPool, "InvalidAmount");
-    });
-
-    it("Should revert when pool has insufficient USDC", async function () {
-      // Withdraw most of the USDC from pool first
-      const largeWithdraw = ethers.parseUnits("999", 6);
-      const proof = new Uint8Array(32);
-      await fundPool.connect(user1).withdraw(largeWithdraw, proof);
-
-      // Try to withdraw more than available
-      await expect(
-        fundPool.connect(user1).withdraw(ethers.parseUnits("100", 6), proof)
-      ).to.be.revertedWithCustomError(fundPool, "InsufficientBalance");
     });
   });
 

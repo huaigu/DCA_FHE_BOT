@@ -132,7 +132,7 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, Pausable, IC
     }
 
     /// @notice Check if upkeep is needed (Chainlink Automation)
-    /// @param checkData Data passed from Chainlink (not used)
+    /// @param checkData Data passed from Chainlink during registration (optional configuration)
     /// @return upkeepNeeded True if batch processing is needed
     /// @return performData Data to pass to performUpkeep
     function checkUpkeep(bytes calldata checkData)
@@ -141,27 +141,45 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, Pausable, IC
         override
         returns (bool upkeepNeeded, bytes memory performData)
     {
-        checkData; // Silence unused variable warning
-        
+        // Basic state checks
         if (!automationEnabled || paused()) {
             return (false, "");
+        }
+        
+        // Parse checkData for optional configuration (if provided)
+        uint256 minBatchSize = 5; // Default minimum batch size
+        uint256 maxPriceAge = PRICE_STALENESS_THRESHOLD; // Default price staleness
+        
+        if (checkData.length > 0) {
+            // Decode optional configuration from checkData
+            // Format: abi.encode(minBatchSize, maxPriceAge)
+            try this.decodeCheckData(checkData) returns (uint256 _minBatchSize, uint256 _maxPriceAge) {
+                if (_minBatchSize > 0 && _minBatchSize <= 50) { // Reasonable bounds
+                    minBatchSize = _minBatchSize;
+                }
+                if (_maxPriceAge > 0 && _maxPriceAge <= 7200) { // Max 2 hours
+                    maxPriceAge = _maxPriceAge;
+                }
+            } catch {
+                // If checkData parsing fails, use defaults
+            }
         }
         
         // Check if there's a batch ready for processing
         (bool isReady, uint256 batchId, uint256[] memory intentIds) = intentCollector.checkBatchReady();
         
-        if (isReady && batchId > lastProcessedBatch) {
-            // Validate price data freshness
+        if (isReady && batchId > lastProcessedBatch && intentIds.length >= minBatchSize) {
+            // Validate price data freshness with configurable threshold
             try priceFeed.latestRoundData() returns (
-                uint80 roundId,
+                uint80 /*roundId*/,
                 int256 price,
-                uint256 startedAt,
+                uint256 /*startedAt*/,
                 uint256 updatedAt,
-                uint80 answeredInRound
+                uint80 /*answeredInRound*/
             ) {
-                if (price > 0 && updatedAt > block.timestamp - PRICE_STALENESS_THRESHOLD) {
+                if (price > 0 && updatedAt > block.timestamp - maxPriceAge) {
                     upkeepNeeded = true;
-                    performData = abi.encode(batchId, intentIds);
+                    performData = abi.encode(batchId, intentIds, minBatchSize);
                 }
             } catch {
                 // Price feed failed, don't trigger upkeep
@@ -170,17 +188,50 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, Pausable, IC
         }
     }
 
+    /// @notice Helper function to decode checkData configuration
+    /// @param checkData Encoded configuration data
+    /// @return minBatchSize Minimum batch size required
+    /// @return maxPriceAge Maximum price staleness allowed
+    function decodeCheckData(bytes calldata checkData) 
+        external 
+        pure 
+        returns (uint256 minBatchSize, uint256 maxPriceAge) 
+    {
+        (minBatchSize, maxPriceAge) = abi.decode(checkData, (uint256, uint256));
+    }
+
     /// @notice Perform upkeep (Chainlink Automation)
     /// @param performData Data from checkUpkeep
     function performUpkeep(bytes calldata performData) external override whenNotPaused {
         if (!automationEnabled) revert AutomationNotEnabled();
         
-        // Decode perform data
-        (uint256 batchId, uint256[] memory intentIds) = abi.decode(performData, (uint256, uint256[]));
+        // Decode perform data (includes optional minBatchSize)
+        uint256 batchId;
+        uint256[] memory intentIds;
+        uint256 minBatchSize;
         
-        // Verify batch is still ready
+        try this.decodePerformData(performData) returns (
+            uint256 _batchId, 
+            uint256[] memory _intentIds, 
+            uint256 _minBatchSize
+        ) {
+            batchId = _batchId;
+            intentIds = _intentIds;
+            minBatchSize = _minBatchSize;
+        } catch {
+            // Fallback to old format for backward compatibility
+            (batchId, intentIds) = abi.decode(performData, (uint256, uint256[]));
+            minBatchSize = 5; // Default
+        }
+        
+        // Verify batch is still ready and meets minimum size requirement
         (bool isReady, uint256 currentBatchId,) = intentCollector.checkBatchReady();
         if (!isReady || currentBatchId != batchId || batchId <= lastProcessedBatch) {
+            revert BatchNotReady();
+        }
+        
+        // Additional check for minimum batch size (from checkData configuration)
+        if (intentIds.length < minBatchSize) {
             revert BatchNotReady();
         }
         
@@ -188,6 +239,19 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, Pausable, IC
         
         // Process the batch
         _processBatch(batchId, intentIds);
+    }
+
+    /// @notice Helper function to decode performData
+    /// @param performData Encoded perform data
+    /// @return batchId Batch ID to process
+    /// @return intentIds Array of intent IDs
+    /// @return minBatchSize Minimum batch size requirement
+    function decodePerformData(bytes calldata performData) 
+        external 
+        pure 
+        returns (uint256 batchId, uint256[] memory intentIds, uint256 minBatchSize) 
+    {
+        (batchId, intentIds, minBatchSize) = abi.decode(performData, (uint256, uint256[], uint256));
     }
 
     /// @notice Manual trigger for batch processing (owner only, for testing)
