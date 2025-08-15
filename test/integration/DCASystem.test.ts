@@ -132,6 +132,24 @@ describe("DCA System Integration", function () {
   let mockWETH: any;
 
   // Move submitDCAIntent to be accessible by all tests
+  // Helper function to create submitIntent params
+  function createSubmitIntentParams(encryptedInput: any) {
+    return {
+      budgetExt: encryptedInput.handles[0],
+      budgetProof: encryptedInput.inputProof,
+      tradesCountExt: encryptedInput.handles[1],
+      tradesCountProof: encryptedInput.inputProof,
+      amountPerTradeExt: encryptedInput.handles[2],
+      amountPerTradeProof: encryptedInput.inputProof,
+      frequencyExt: encryptedInput.handles[3],
+      frequencyProof: encryptedInput.inputProof,
+      minPriceExt: encryptedInput.handles[4],
+      minPriceProof: encryptedInput.inputProof,
+      maxPriceExt: encryptedInput.handles[5],
+      maxPriceProof: encryptedInput.inputProof
+    };
+  }
+
   async function submitDCAIntent(
     signer: HardhatEthersSigner,
     budget: bigint,
@@ -153,16 +171,10 @@ describe("DCA System Integration", function () {
       .add64(maxPrice)
       .encrypt();
 
+    const params = createSubmitIntentParams(encryptedInput);
     return await intentCollector
       .connect(signer)
-      .submitIntent(
-        encryptedInput.handles[0], encryptedInput.inputProof,
-        encryptedInput.handles[1], encryptedInput.inputProof,
-        encryptedInput.handles[2], encryptedInput.inputProof,
-        encryptedInput.handles[3], encryptedInput.inputProof,
-        encryptedInput.handles[4], encryptedInput.inputProof,
-        encryptedInput.handles[5], encryptedInput.inputProof
-      );
+      .submitIntent(params);
   }
 
   before(async function () {
@@ -209,13 +221,27 @@ describe("DCA System Integration", function () {
     for (const user of users) {
       // Initialize encrypted balance for each user
       await fundPool.testInitializeBalance(user.address, depositAmount);
+      
+      // Update user state to ACTIVE in IntentCollector
+      // Temporarily set deployer as batch processor to update states
+      await intentCollector.connect(signers.deployer).setBatchProcessor(signers.deployer.address);
+      await intentCollector.connect(signers.deployer).updateUserState(user.address, 1); // ACTIVE
     }
     
-    // Give mock router ETH for swaps
+    // Reset batch processor back to the actual batch processor
+    await intentCollector.connect(signers.deployer).setBatchProcessor(await batchProcessor.getAddress());
+    
+    // Give mock router ETH for swaps and mint WETH for token swaps
     await signers.deployer.sendTransaction({
       to: await mockRouter.getAddress(),
       value: ethers.parseEther("10")
     });
+    
+    // Mint WETH to the router for swap outputs
+    await mockWETH.mint(await mockRouter.getAddress(), ethers.parseEther("100"));
+    
+    // Set the swap result to a reasonable amount
+    await mockRouter.setSwapResult(ethers.parseEther("1")); // 1 ETH per swap
   });
 
   describe("Complete DCA Workflow", function () {
@@ -602,11 +628,11 @@ describe("DCA System Integration", function () {
 
       // Verify batch was processed
       const batchResult = await batchProcessor.getBatchResult(1);
-      // Due to privacy-preserving design, the batch processes all intents
-      // but the actual filtering happens at the encrypted level
-      // In testing mode, this shows the hardcoded amounts
-      expect(batchResult.totalAmountOut).to.be.gt(0); // ETH was received from mock swap
-      // The system maintains privacy by not revealing which specific intents were filtered
+      // No intents should execute due to price being outside all ranges
+      // Batch should be successful but with no swaps executed
+      expect(batchResult.success).to.be.true;
+      expect(batchResult.totalAmountIn).to.equal(0); // No USDC swapped
+      expect(batchResult.totalAmountOut).to.equal(0); // No ETH received
     });
 
     it("should handle stale price data correctly", async function () {

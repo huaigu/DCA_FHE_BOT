@@ -19,6 +19,22 @@ contract IntentCollector is SepoliaConfig, Ownable, ReentrancyGuard {
         WITHDRAWN      // User has withdrawn all funds
     }
     
+    /// @notice Structure for submitIntent parameters to avoid stack too deep
+    struct SubmitIntentParams {
+        externalEuint64 budgetExt;
+        bytes budgetProof;
+        externalEuint32 tradesCountExt;
+        bytes tradesCountProof;
+        externalEuint64 amountPerTradeExt;
+        bytes amountPerTradeProof;
+        externalEuint32 frequencyExt;
+        bytes frequencyProof;
+        externalEuint64 minPriceExt;
+        bytes minPriceProof;
+        externalEuint64 maxPriceExt;
+        bytes maxPriceProof;
+    }
+    
     /// @notice Structure representing an encrypted DCA intent
     struct EncryptedIntent {
         euint64 budget;          // Total USDC budget for DCA
@@ -134,32 +150,10 @@ contract IntentCollector is SepoliaConfig, Ownable, ReentrancyGuard {
     }
 
     /// @notice Submit a new encrypted DCA intent
-    /// @param budgetExt External encrypted budget
-    /// @param budgetProof Proof for budget encryption
-    /// @param tradesCountExt External encrypted trades count
-    /// @param tradesCountProof Proof for trades count encryption
-    /// @param amountPerTradeExt External encrypted amount per trade
-    /// @param amountPerTradeProof Proof for amount per trade encryption
-    /// @param frequencyExt External encrypted frequency
-    /// @param frequencyProof Proof for frequency encryption
-    /// @param minPriceExt External encrypted minimum price
-    /// @param minPriceProof Proof for minimum price encryption
-    /// @param maxPriceExt External encrypted maximum price
-    /// @param maxPriceProof Proof for maximum price encryption
+    /// @param params Struct containing all encrypted parameters and proofs
     /// @return intentId The ID of the submitted intent
     function submitIntent(
-        externalEuint64 budgetExt,
-        bytes calldata budgetProof,
-        externalEuint32 tradesCountExt,
-        bytes calldata tradesCountProof,
-        externalEuint64 amountPerTradeExt,
-        bytes calldata amountPerTradeProof,
-        externalEuint32 frequencyExt,
-        bytes calldata frequencyProof,
-        externalEuint64 minPriceExt,
-        bytes calldata minPriceProof,
-        externalEuint64 maxPriceExt,
-        bytes calldata maxPriceProof
+        SubmitIntentParams calldata params
     ) external nonReentrant returns (uint256 intentId) {
         // Check fund pool is set
         if (address(fundPool) == address(0)) revert FundPoolNotSet();
@@ -176,12 +170,12 @@ contract IntentCollector is SepoliaConfig, Ownable, ReentrancyGuard {
         }
         
         // Convert external encrypted inputs to internal encrypted values
-        euint64 budget = FHE.fromExternal(budgetExt, budgetProof);
-        euint32 tradesCount = FHE.fromExternal(tradesCountExt, tradesCountProof);
-        euint64 amountPerTrade = FHE.fromExternal(amountPerTradeExt, amountPerTradeProof);
-        euint32 frequency = FHE.fromExternal(frequencyExt, frequencyProof);
-        euint64 minPrice = FHE.fromExternal(minPriceExt, minPriceProof);
-        euint64 maxPrice = FHE.fromExternal(maxPriceExt, maxPriceProof);
+        euint64 budget = FHE.fromExternal(params.budgetExt, params.budgetProof);
+        euint32 tradesCount = FHE.fromExternal(params.tradesCountExt, params.tradesCountProof);
+        euint64 amountPerTrade = FHE.fromExternal(params.amountPerTradeExt, params.amountPerTradeProof);
+        euint32 frequency = FHE.fromExternal(params.frequencyExt, params.frequencyProof);
+        euint64 minPrice = FHE.fromExternal(params.minPriceExt, params.minPriceProof);
+        euint64 maxPrice = FHE.fromExternal(params.maxPriceExt, params.maxPriceProof);
         
         // Check user has sufficient balance in FundPool
         if (!fundPool.isBalanceInitialized(msg.sender)) revert InsufficientFundPoolBalance();
