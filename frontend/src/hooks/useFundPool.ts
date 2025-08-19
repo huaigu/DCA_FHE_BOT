@@ -32,7 +32,7 @@ export function useFundPool() {
     contract,
     'getEncryptedBalance',
     address ? [address] : [],
-    !!address
+    false // temporarily disabled to fix call error
   );
 
   // Check if balance is initialized
@@ -43,7 +43,7 @@ export function useFundPool() {
     contract,
     'isBalanceInitialized',
     address ? [address] : [],
-    !!address
+    false // temporarily disabled
   );
 
   // Get total pool balance
@@ -54,7 +54,7 @@ export function useFundPool() {
     contract,
     'getTotalPoolBalance',
     [],
-    true
+    false // temporarily disabled
   );
 
   // Contract write functions
