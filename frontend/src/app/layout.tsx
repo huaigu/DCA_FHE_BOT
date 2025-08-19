@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
+import { FHEErrorBoundary } from '@/components/FHEErrorBoundary'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -27,9 +28,11 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full">
       <body className={`${inter.className} h-full bg-gradient-to-br from-blue-50 via-white to-purple-50`}>
-        <div className="min-h-full">
-          {children}
-        </div>
+        <FHEErrorBoundary>
+          <div className="min-h-full">
+            {children}
+          </div>
+        </FHEErrorBoundary>
       </body>
     </html>
   )

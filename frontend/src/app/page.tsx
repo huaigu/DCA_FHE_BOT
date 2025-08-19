@@ -1,46 +1,35 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
-import { motion } from 'framer-motion'
-import { Button } from '@/components/ui/button'
-import { DCAForm } from '@/components/DCAForm'
-import { BatchStatus } from '@/components/BatchStatus'
-import { BalanceView } from '@/components/BalanceView'
-import { WalletConnect } from '@/components/WalletConnect'
-import { useFHE } from '@/hooks/useFHE'
-import { testFHEIntegration } from '@/utils/fheTest'
-import { 
-  Shield, 
-  TrendingUp, 
-  Users, 
-  Eye,
-  Github,
-  ExternalLink,
-  Zap,
-  Lock,
-  Loader2,
-  AlertCircle
-} from 'lucide-react'
+import { useState } from "react";
+import { motion } from "framer-motion";
+import { Button } from "@/components/ui/button";
+import { DCAForm } from "@/components/DCAForm";
+import { BatchStatus } from "@/components/BatchStatus";
+import { BalanceView } from "@/components/BalanceView";
+import { WalletConnect } from "@/components/WalletConnect";
+import { useFHE } from "@/hooks/useFHE";
+import { testFHEIntegration } from "@/utils/fheTest";
+import { Shield, TrendingUp, Users, Eye, Github, ExternalLink, Zap, Lock, Loader2, AlertCircle } from "lucide-react";
 
-type TabType = 'create' | 'status' | 'balance'
+type TabType = "create" | "status" | "balance";
 
 export default function HomePage() {
-  const [activeTab, setActiveTab] = useState<TabType>('create')
-  const { isLoaded: isFHELoaded, isLoading: isFHELoading, isError: isFHEError, retry: retryFHE } = useFHE()
+  const [activeTab, setActiveTab] = useState<TabType>("create");
+  const { isLoaded: isFHELoaded, isLoading: isFHELoading, isError: isFHEError, retry: retryFHE } = useFHE();
 
   // Development: Test FHE integration (only show in development)
   const testFHE = async () => {
-    if (process.env.NODE_ENV === 'development') {
-      const result = await testFHEIntegration()
-      console.log('FHE Test Result:', result)
+    if (process.env.NODE_ENV === "development") {
+      const result = await testFHEIntegration();
+      console.log("FHE Test Result:", result);
     }
-  }
+  };
 
   const tabs = [
-    { id: 'create', label: 'Create Intent', icon: Shield },
-    { id: 'status', label: 'Batch Status', icon: Users },
-    { id: 'balance', label: 'My Balance', icon: Eye },
-  ] as const
+    { id: "create", label: "Create Intent", icon: Shield },
+    { id: "status", label: "Batch Status", icon: Users },
+    { id: "balance", label: "My Balance", icon: Eye },
+  ] as const;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
@@ -62,9 +51,7 @@ export default function HomePage() {
                 <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                   DCA FHE Bot
                 </h1>
-                <p className="text-sm text-muted-foreground">
-                  Privacy-Preserving Dollar Cost Averaging
-                </p>
+                <p className="text-sm text-muted-foreground">Privacy-Preserving Dollar Cost Averaging</p>
               </div>
             </motion.div>
 
@@ -87,7 +74,7 @@ export default function HomePage() {
                   <>
                     <Shield className="w-4 h-4 text-green-600" />
                     <span className="text-green-600">FHE Ready</span>
-                    {process.env.NODE_ENV === 'development' && (
+                    {process.env.NODE_ENV === "development" && (
                       <Button variant="ghost" size="sm" onClick={testFHE} className="h-6 px-2 text-xs">
                         Test
                       </Button>
@@ -123,8 +110,8 @@ export default function HomePage() {
               Private DCA Strategies
             </h2>
             <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
-              Execute USDC → WETH DCA strategies with full privacy using Fully Homomorphic Encryption. 
-              Your investment parameters remain encrypted while participating in batch executions on Sepolia.
+              Execute USDC → WETH DCA strategies with full privacy using Fully Homomorphic Encryption. Your investment
+              parameters remain encrypted while participating in batch executions on Sepolia.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -136,9 +123,7 @@ export default function HomePage() {
               >
                 <Lock className="w-12 h-12 text-blue-600 mx-auto mb-4" />
                 <h3 className="text-lg font-semibold mb-2">Encrypted Privacy</h3>
-                <p className="text-sm text-muted-foreground">
-                  All DCA parameters encrypted using FHE technology
-                </p>
+                <p className="text-sm text-muted-foreground">All DCA parameters encrypted using FHE technology</p>
               </motion.div>
 
               <motion.div
@@ -149,9 +134,7 @@ export default function HomePage() {
               >
                 <Users className="w-12 h-12 text-purple-600 mx-auto mb-4" />
                 <h3 className="text-lg font-semibold mb-2">Batch Execution</h3>
-                <p className="text-sm text-muted-foreground">
-                  K-anonymity through batched operations (5-10 users)
-                </p>
+                <p className="text-sm text-muted-foreground">K-anonymity through batched operations (5-10 users)</p>
               </motion.div>
 
               <motion.div
@@ -162,9 +145,7 @@ export default function HomePage() {
               >
                 <TrendingUp className="w-12 h-12 text-green-600 mx-auto mb-4" />
                 <h3 className="text-lg font-semibold mb-2">Smart Conditions</h3>
-                <p className="text-sm text-muted-foreground">
-                  Encrypted price ranges for conditional execution
-                </p>
+                <p className="text-sm text-muted-foreground">Encrypted price ranges for conditional execution</p>
               </motion.div>
             </div>
           </motion.div>
@@ -183,18 +164,18 @@ export default function HomePage() {
           >
             <div className="flex bg-white/60 backdrop-blur-sm rounded-xl p-1 border">
               {tabs.map((tab) => {
-                const Icon = tab.icon
+                const Icon = tab.icon;
                 return (
                   <Button
                     key={tab.id}
-                    variant={activeTab === tab.id ? 'default' : 'ghost'}
+                    variant={activeTab === tab.id ? "default" : "ghost"}
                     onClick={() => setActiveTab(tab.id as TabType)}
                     className="flex items-center gap-2 px-6 py-3"
                   >
                     <Icon className="w-4 h-4" />
                     {tab.label}
                   </Button>
-                )
+                );
               })}
             </div>
           </motion.div>
@@ -208,9 +189,9 @@ export default function HomePage() {
               transition={{ duration: 0.5 }}
               className="w-full max-w-4xl"
             >
-              {activeTab === 'create' && <DCAForm />}
-              {activeTab === 'status' && <BatchStatus />}
-              {activeTab === 'balance' && <BalanceView />}
+              {activeTab === "create" && <DCAForm />}
+              {activeTab === "status" && <BatchStatus />}
+              {activeTab === "balance" && <BalanceView />}
             </motion.div>
           </div>
         </div>
@@ -226,9 +207,7 @@ export default function HomePage() {
               </div>
               <div>
                 <p className="font-medium">DCA FHE Bot</p>
-                <p className="text-sm text-muted-foreground">
-                  Built for Zama Bounty Season 9
-                </p>
+                <p className="text-sm text-muted-foreground">Built for Zama Bounty Season 9</p>
               </div>
             </div>
 
@@ -270,13 +249,10 @@ export default function HomePage() {
           </div>
 
           <div className="mt-6 pt-6 border-t text-center text-sm text-muted-foreground">
-            <p>
-              Built with ❤️ using Zama fhEVM, Next.js, and Tailwind CSS. 
-              Privacy-first DCA strategies on Ethereum Sepolia testnet.
-            </p>
+            <p>Built with ❤️ using Zama fhEVM, Privacy-first DCA strategies on Ethereum Sepolia testnet.</p>
           </div>
         </div>
       </footer>
     </div>
-  )
+  );
 }

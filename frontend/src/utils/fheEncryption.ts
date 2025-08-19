@@ -1,5 +1,4 @@
 import { BrowserProvider, JsonRpcSigner } from 'ethers'
-import { initSDK, createInstance, SepoliaConfig } from '@zama-fhe/relayer-sdk/bundle'
 
 export interface EncryptedIntent {
   budget: bigint
@@ -38,36 +37,55 @@ let fhevmInstance: any = null
 let sdkInitialized = false
 
 /**
- * 初始化 FHEVM 实例 - 使用 npm 包方式
+ * 初始化 FHEVM 实例 - 使用动态导入和错误处理
  */
 export async function initializeFHE(): Promise<any> {
   try {
     if (!fhevmInstance) {
       console.log('Initializing FHEVM using npm package...')
 
+      // 动态导入 SDK
+      console.log('Loading FHE SDK modules...')
+      const { initSDK, createInstance, SepoliaConfig } = await import('@zama-fhe/relayer-sdk/web')
+      console.log('FHE SDK modules loaded successfully')
+
       // 初始化 SDK (加载 WASM)
       if (!sdkInitialized) {
         console.log('Loading TFHE WASM...')
-        await initSDK()
-        sdkInitialized = true
-        console.log('TFHE WASM loaded successfully')
+        if (typeof initSDK === 'function') {
+          await initSDK()
+          sdkInitialized = true
+          console.log('TFHE WASM loaded successfully')
+        } else {
+          throw new Error('initSDK function not available')
+        }
       }
 
       // 创建实例配置
+      if (!SepoliaConfig) {
+        throw new Error('SepoliaConfig not available')
+      }
+
       const config = {
         ...SepoliaConfig,
         network: (window as any).ethereum || "https://eth-sepolia.public.blastapi.io"
       }
       
       console.log('Creating FHEVM instance with config:', config)
-      fhevmInstance = await createInstance(config)
-      console.log('FHEVM instance created successfully')
+      if (typeof createInstance === 'function') {
+        fhevmInstance = await createInstance(config)
+        console.log('FHEVM instance created successfully')
+      } else {
+        throw new Error('createInstance function not available')
+      }
     }
     
     return fhevmInstance
   } catch (error) {
     console.error('Failed to initialize FHEVM:', error)
-    throw new Error(`Failed to initialize FHE encryption: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    console.warn('FHE functionality will be disabled')
+    // 不抛出错误，而是返回 null，让应用继续运行
+    return null
   }
 }
 
@@ -82,6 +100,13 @@ export async function getFhevmInstance(): Promise<any> {
 }
 
 /**
+ * 检查 FHE 是否可用
+ */
+export function isFHEAvailable(): boolean {
+  return fhevmInstance !== null
+}
+
+/**
  * 加密单个金额值（用于 FundPool 存款）
  */
 export async function encryptAmount(
@@ -91,6 +116,10 @@ export async function encryptAmount(
 ): Promise<{ encryptedData: string; proof: string }> {
   try {
     const fhevm = await getFhevmInstance()
+    
+    if (!fhevm) {
+      throw new Error('FHE not available - encryption failed')
+    }
     
     // 创建加密输入
     const encryptedInput = fhevm.createEncryptedInput(contractAddress, userAddress)
@@ -105,7 +134,7 @@ export async function encryptAmount(
     }
   } catch (error) {
     console.error('Failed to encrypt amount:', error)
-    throw new Error('Amount encryption failed')
+    throw new Error(`Amount encryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
 }
 
@@ -119,6 +148,10 @@ export async function encryptDCAIntent(
 ): Promise<EncryptedDCAParams> {
   try {
     const fhevm = await getFhevmInstance()
+    
+    if (!fhevm) {
+      throw new Error('FHE not available - DCA intent encryption failed')
+    }
     
     // 为每个参数创建单独的加密输入
     const encryptedParams: any = {}

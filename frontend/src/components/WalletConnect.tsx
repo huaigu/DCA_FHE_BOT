@@ -1,62 +1,39 @@
-'use client'
+"use client";
 
-import { useEffect } from 'react'
-import { motion } from 'framer-motion'
-import { Button } from '@/components/ui/button'
-import { useWalletStore } from '@/lib/store'
-import { useUSDC } from '@/hooks/useUSDC'
-import { initializeFHE } from '@/utils/fheEncryption'
-import { formatAddress } from '@/lib/utils'
-import { 
-  Wallet, 
-  LogOut, 
-  AlertTriangle, 
-  Loader2,
-  Shield,
-  CheckCircle,
-  DollarSign,
-  RefreshCw
-} from 'lucide-react'
+import { useEffect } from "react";
+import { motion } from "framer-motion";
+import { Button } from "@/components/ui/button";
+import { useWalletStore } from "@/lib/store";
+import { useUSDC } from "@/hooks/useUSDC";
+import { initializeFHE } from "@/utils/fheEncryption";
+import { formatAddress } from "@/lib/utils";
+import { Wallet, LogOut, AlertTriangle, Loader2, Shield, CheckCircle, DollarSign, RefreshCw } from "lucide-react";
 
 export function WalletConnect() {
-  const {
-    isConnected,
-    address,
-    chainId,
-    isConnecting,
-    error,
-    connectWallet,
-    disconnectWallet,
-    clearError,
-    provider
-  } = useWalletStore()
+  const { isConnected, address, chainId, isConnecting, error, connectWallet, disconnectWallet, clearError, provider } =
+    useWalletStore();
 
   // USDC balance hook
-  const {
-    balance: usdcBalance,
-    formatAmount: formatUSDCAmount,
-    isBalanceLoading,
-    refetchBalance
-  } = useUSDC()
+  const { balance: usdcBalance, formatAmount: formatUSDCAmount, isBalanceLoading, refetchBalance } = useUSDC();
 
   // Initialize FHE when wallet connects
   useEffect(() => {
     if (isConnected && provider) {
-      initializeFHE().catch(error => {
-        console.error('Failed to initialize FHE:', error)
-      })
+      initializeFHE().catch((error) => {
+        console.error("Failed to initialize FHE:", error);
+      });
     }
-  }, [isConnected, provider])
+  }, [isConnected, provider]);
 
   // Auto-clear errors after 5 seconds
   useEffect(() => {
     if (error) {
       const timer = setTimeout(() => {
-        clearError()
-      }, 5000)
-      return () => clearTimeout(timer)
+        clearError();
+      }, 5000);
+      return () => clearTimeout(timer);
     }
-  }, [error, clearError])
+  }, [error, clearError]);
 
   if (isConnected && address) {
     return (
@@ -71,11 +48,7 @@ export function WalletConnect() {
           <div className="flex items-center gap-2">
             <DollarSign className="w-4 h-4 text-green-600 flex-shrink-0" />
             <span className="text-sm font-mono text-green-800 truncate">
-              {isBalanceLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                formatUSDCAmount(usdcBalance)
-              )}
+              {isBalanceLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : formatUSDCAmount(usdcBalance)}
             </span>
           </div>
           <Button
@@ -85,7 +58,7 @@ export function WalletConnect() {
             disabled={isBalanceLoading}
             className="h-auto p-1 hover:bg-green-100 flex-shrink-0"
           >
-            <RefreshCw className={`w-3 h-3 ${isBalanceLoading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3 h-3 ${isBalanceLoading ? "animate-spin" : ""}`} />
           </Button>
         </div>
 
@@ -93,18 +66,14 @@ export function WalletConnect() {
           {/* Wallet Address */}
           <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg min-w-0 flex-1 sm:flex-none">
             <CheckCircle className="w-4 h-4 text-blue-600 flex-shrink-0" />
-            <span className="text-sm font-medium text-blue-800 truncate">
-              {formatAddress(address)}
-            </span>
+            <span className="text-sm font-medium text-blue-800 truncate">{formatAddress(address)}</span>
             <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse flex-shrink-0" />
           </div>
-          
+
           {/* FHE Status - hidden on small screens */}
           <div className="hidden sm:flex items-center gap-2 px-3 py-2 bg-purple-50 border border-purple-200 rounded-lg">
             <Shield className="w-4 h-4 text-purple-600" />
-            <span className="text-sm font-medium text-purple-800">
-              FHE Ready
-            </span>
+            <span className="text-sm font-medium text-purple-800">FHE Ready</span>
           </div>
 
           {/* Disconnect Button */}
@@ -118,17 +87,12 @@ export function WalletConnect() {
           </Button>
         </div>
       </motion.div>
-    )
+    );
   }
 
   return (
     <div className="space-y-3">
-      <Button
-        onClick={connectWallet}
-        disabled={isConnecting}
-        size="lg"
-        className="w-full sm:w-auto"
-      >
+      <Button onClick={connectWallet} disabled={isConnecting} size="lg" className="w-full sm:w-auto">
         {isConnecting ? (
           <>
             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -153,14 +117,6 @@ export function WalletConnect() {
           <span className="text-sm text-red-800">{error}</span>
         </motion.div>
       )}
-
-      {!isConnected && (
-        <div className="text-center">
-          <p className="text-sm text-muted-foreground">
-            Connect to Sepolia testnet to use the DCA bot
-          </p>
-        </div>
-      )}
     </div>
-  )
+  );
 }
