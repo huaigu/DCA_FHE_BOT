@@ -1,21 +1,359 @@
 [
   {
     "inputs": [
-      {"internalType": "uint256", "name": "budgetExt", "type": "uint256"},
-      {"internalType": "bytes", "name": "budgetProof", "type": "bytes"},
-      {"internalType": "uint256", "name": "tradesCountExt", "type": "uint256"},
-      {"internalType": "bytes", "name": "tradesCountProof", "type": "bytes"},
-      {"internalType": "uint256", "name": "amountPerTradeExt", "type": "uint256"},
-      {"internalType": "bytes", "name": "amountPerTradeProof", "type": "bytes"},
-      {"internalType": "uint256", "name": "frequencyExt", "type": "uint256"},
-      {"internalType": "bytes", "name": "frequencyProof", "type": "bytes"},
-      {"internalType": "uint256", "name": "minPriceExt", "type": "uint256"},
-      {"internalType": "bytes", "name": "minPriceProof", "type": "bytes"},
-      {"internalType": "uint256", "name": "maxPriceExt", "type": "uint256"},
-      {"internalType": "bytes", "name": "maxPriceProof", "type": "bytes"}
+      {
+        "internalType": "address",
+        "name": "_owner",
+        "type": "address"
+      }
     ],
-    "name": "submitIntent",
-    "outputs": [{"internalType": "uint256", "name": "intentId", "type": "uint256"}],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "inputs": [],
+    "name": "BatchNotReady",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "FundPoolNotSet",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InsufficientFundPoolBalance",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "IntentAlreadyProcessed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "IntentNotFound",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidBatchProcessor",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidIntentParameters",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidUserState",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "owner",
+        "type": "address"
+      }
+    ],
+    "name": "OwnableInvalidOwner",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "OwnableUnauthorizedAccount",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ReentrancyGuardReentrantCall",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "UnauthorizedCaller",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "UserNotActive",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "oldProcessor",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "newProcessor",
+        "type": "address"
+      }
+    ],
+    "name": "BatchProcessorUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "batchId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "intentCount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
+      }
+    ],
+    "name": "BatchReady",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "intentId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "batchId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "success",
+        "type": "bool"
+      }
+    ],
+    "name": "IntentProcessed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "intentId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "batchId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
+      }
+    ],
+    "name": "IntentSubmitted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "previousOwner",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "newOwner",
+        "type": "address"
+      }
+    ],
+    "name": "OwnershipTransferred",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256[]",
+        "name": "intentIds",
+        "type": "uint256[]"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
+      }
+    ],
+    "name": "UserIntentsCancelled",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum IntentCollector.UserState",
+        "name": "oldState",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum IntentCollector.UserState",
+        "name": "newState",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
+      }
+    ],
+    "name": "UserStateChanged",
+    "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "BATCH_TIMEOUT",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "batchCounter",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "batchIntents",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "batchProcessor",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      }
+    ],
+    "name": "canSubmitIntent",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      }
+    ],
+    "name": "cancelUserIntents",
+    "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
   },
@@ -23,30 +361,174 @@
     "inputs": [],
     "name": "checkBatchReady",
     "outputs": [
-      {"internalType": "bool", "name": "isReady", "type": "bool"},
-      {"internalType": "uint256", "name": "batchId", "type": "uint256"},
-      {"internalType": "uint256[]", "name": "intentIds", "type": "uint256[]"}
+      {
+        "internalType": "bool",
+        "name": "isReady",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint256",
+        "name": "batchId",
+        "type": "uint256"
+      }
     ],
     "stateMutability": "view",
     "type": "function"
   },
   {
-    "inputs": [{"internalType": "uint256", "name": "intentId", "type": "uint256"}],
+    "inputs": [],
+    "name": "currentBatchStartTime",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "intentIds",
+        "type": "uint256[]"
+      }
+    ],
+    "name": "filterActiveIntents",
+    "outputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "activeIntentIds",
+        "type": "uint256[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "fundPool",
+    "outputs": [
+      {
+        "internalType": "contract IFundPool",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "batchId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getBatchIntents",
+    "outputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "intentIds",
+        "type": "uint256[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getBatchStats",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "currentBatch",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "pendingCount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "timeRemaining",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "intentId",
+        "type": "uint256"
+      }
+    ],
     "name": "getIntent",
     "outputs": [
       {
         "components": [
-          {"internalType": "uint256", "name": "budget", "type": "uint256"},
-          {"internalType": "uint256", "name": "tradesCount", "type": "uint256"},
-          {"internalType": "uint256", "name": "amountPerTrade", "type": "uint256"},
-          {"internalType": "uint256", "name": "frequency", "type": "uint256"},
-          {"internalType": "uint256", "name": "minPrice", "type": "uint256"},
-          {"internalType": "uint256", "name": "maxPrice", "type": "uint256"},
-          {"internalType": "address", "name": "user", "type": "address"},
-          {"internalType": "uint256", "name": "submittedAt", "type": "uint256"},
-          {"internalType": "uint256", "name": "batchId", "type": "uint256"},
-          {"internalType": "bool", "name": "isActive", "type": "bool"},
-          {"internalType": "bool", "name": "isProcessed", "type": "bool"}
+          {
+            "internalType": "euint64",
+            "name": "budget",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "euint32",
+            "name": "tradesCount",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "euint64",
+            "name": "amountPerTrade",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "euint32",
+            "name": "frequency",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "euint64",
+            "name": "minPrice",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "euint64",
+            "name": "maxPrice",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "address",
+            "name": "user",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "submittedAt",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "batchId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "isActive",
+            "type": "bool"
+          },
+          {
+            "internalType": "bool",
+            "name": "isProcessed",
+            "type": "bool"
+          }
         ],
         "internalType": "struct IntentCollector.EncryptedIntent",
         "name": "intent",
@@ -57,42 +539,425 @@
     "type": "function"
   },
   {
-    "inputs": [{"internalType": "address", "name": "user", "type": "address"}],
-    "name": "getUserIntents",
-    "outputs": [{"internalType": "uint256[]", "name": "intentIds", "type": "uint256[]"}],
+    "inputs": [],
+    "name": "getPendingIntentsCount",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "count",
+        "type": "uint256"
+      }
+    ],
     "stateMutability": "view",
     "type": "function"
   },
   {
     "inputs": [],
-    "name": "getBatchStats",
+    "name": "getReadyBatch",
     "outputs": [
-      {"internalType": "uint256", "name": "currentBatch", "type": "uint256"},
-      {"internalType": "uint256", "name": "pendingCount", "type": "uint256"},
-      {"internalType": "uint256", "name": "timeRemaining", "type": "uint256"}
+      {
+        "internalType": "uint256",
+        "name": "batchId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "intentIds",
+        "type": "uint256[]"
+      }
     ],
     "stateMutability": "view",
     "type": "function"
   },
   {
-    "anonymous": false,
     "inputs": [
-      {"indexed": true, "internalType": "uint256", "name": "intentId", "type": "uint256"},
-      {"indexed": true, "internalType": "address", "name": "user", "type": "address"},
-      {"indexed": true, "internalType": "uint256", "name": "batchId", "type": "uint256"},
-      {"indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256"}
+      {
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      }
     ],
-    "name": "IntentSubmitted",
-    "type": "event"
+    "name": "getUserIntents",
+    "outputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "intentIds",
+        "type": "uint256[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
   },
   {
-    "anonymous": false,
     "inputs": [
-      {"indexed": true, "internalType": "uint256", "name": "batchId", "type": "uint256"},
-      {"indexed": false, "internalType": "uint256", "name": "intentCount", "type": "uint256"},
-      {"indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256"}
+      {
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      }
     ],
-    "name": "BatchReady",
-    "type": "event"
+    "name": "getUserState",
+    "outputs": [
+      {
+        "internalType": "enum IntentCollector.UserState",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "intentCounter",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "intents",
+    "outputs": [
+      {
+        "internalType": "euint64",
+        "name": "budget",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "euint32",
+        "name": "tradesCount",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "euint64",
+        "name": "amountPerTrade",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "euint32",
+        "name": "frequency",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "euint64",
+        "name": "minPrice",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "euint64",
+        "name": "maxPrice",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "submittedAt",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "batchId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bool",
+        "name": "isActive",
+        "type": "bool"
+      },
+      {
+        "internalType": "bool",
+        "name": "isProcessed",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "intentIds",
+        "type": "uint256[]"
+      },
+      {
+        "internalType": "bool",
+        "name": "success",
+        "type": "bool"
+      }
+    ],
+    "name": "markIntentsProcessed",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "minBatchSize",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "owner",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "pendingIntents",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "renounceOwnership",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_batchProcessor",
+        "type": "address"
+      }
+    ],
+    "name": "setBatchProcessor",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_fundPool",
+        "type": "address"
+      }
+    ],
+    "name": "setFundPool",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_minBatchSize",
+        "type": "uint256"
+      }
+    ],
+    "name": "setMinBatchSize",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "startNewBatch",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "externalEuint64",
+            "name": "budgetExt",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes",
+            "name": "budgetProof",
+            "type": "bytes"
+          },
+          {
+            "internalType": "externalEuint32",
+            "name": "tradesCountExt",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes",
+            "name": "tradesCountProof",
+            "type": "bytes"
+          },
+          {
+            "internalType": "externalEuint64",
+            "name": "amountPerTradeExt",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes",
+            "name": "amountPerTradeProof",
+            "type": "bytes"
+          },
+          {
+            "internalType": "externalEuint32",
+            "name": "frequencyExt",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes",
+            "name": "frequencyProof",
+            "type": "bytes"
+          },
+          {
+            "internalType": "externalEuint64",
+            "name": "minPriceExt",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes",
+            "name": "minPriceProof",
+            "type": "bytes"
+          },
+          {
+            "internalType": "externalEuint64",
+            "name": "maxPriceExt",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes",
+            "name": "maxPriceProof",
+            "type": "bytes"
+          }
+        ],
+        "internalType": "struct IntentCollector.SubmitIntentParams",
+        "name": "params",
+        "type": "tuple"
+      }
+    ],
+    "name": "submitIntent",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "intentId",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "newOwner",
+        "type": "address"
+      }
+    ],
+    "name": "transferOwnership",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "internalType": "enum IntentCollector.UserState",
+        "name": "newState",
+        "type": "uint8"
+      }
+    ],
+    "name": "updateUserState",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "userIntents",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "userStates",
+    "outputs": [
+      {
+        "internalType": "enum IntentCollector.UserState",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
   }
 ]

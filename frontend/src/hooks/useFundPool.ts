@@ -166,7 +166,7 @@ export function useFundPool() {
     
     // Balance info
     balance,
-    totalPoolBalance: totalPoolBalance || 0n,
+    totalPoolBalance: totalPoolBalance || BigInt(0),
     isBalanceLoading,
     
     // Actions

@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import { useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useWalletStore } from '@/lib/store';
 
 /**
@@ -38,58 +38,41 @@ export function useContractRead<T>(
   args: any[] = [],
   enabled = true
 ) {
-  const { data, error, isLoading, refetch } = useMemo(() => {
+  const [data, setData] = useState<T | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchData = useCallback(async (): Promise<T | null> => {
     if (!contract || !enabled) {
-      return {
-        data: null,
-        error: null,
-        isLoading: false,
-        refetch: async () => null
-      };
+      return null;
     }
 
-    let isMounted = true;
-    const controller = new AbortController();
+    setIsLoading(true);
+    setError(null);
 
-    const fetchData = async (): Promise<{
-      data: T | null;
-      error: Error | null;
-      isLoading: boolean;
-    }> => {
-      try {
-        const result = await contract[methodName](...args);
-        if (isMounted) {
-          return { data: result, error: null, isLoading: false };
-        }
-      } catch (err) {
-        if (isMounted) {
-          return { 
-            data: null, 
-            error: err as Error, 
-            isLoading: false 
-          };
-        }
-      }
-      return { data: null, error: null, isLoading: false };
-    };
-
-    // Cleanup function
-    const cleanup = () => {
-      isMounted = false;
-      controller.abort();
-    };
-
-    // Initial fetch
-    const initialFetch = fetchData();
-
-    return {
-      data: null as T | null,
-      error: null as Error | null,
-      isLoading: true,
-      refetch: fetchData,
-      cleanup
-    };
+    try {
+      const result = await contract[methodName](...args);
+      setData(result);
+      setIsLoading(false);
+      return result;
+    } catch (err) {
+      const error = err as Error;
+      console.error(`Contract read error (${methodName}):`, error);
+      setError(error);
+      setData(null);
+      setIsLoading(false);
+      return null;
+    }
   }, [contract, methodName, JSON.stringify(args), enabled]);
+
+  // Auto-fetch on mount and dependency changes
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const refetch = useCallback(async () => {
+    return await fetchData();
+  }, [fetchData]);
 
   return { data, error, isLoading, refetch };
 }

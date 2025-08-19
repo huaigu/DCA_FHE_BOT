@@ -31,8 +31,19 @@ export function DCAForm() {
   
   // Hooks
   const { submitIntent, isLoading: isSubmittingIntent } = useIntentCollector()
-  const { balance: fundPoolBalance, formatBalance } = useFundPool()
-  const { balance: usdcBalance, formatAmount } = useUSDC()
+  const { 
+    balance: fundPoolBalance, 
+    formatBalance, 
+    isLoading: isFundPoolLoading,
+    refetchBalance: refetchFundPoolBalance
+  } = useFundPool()
+  const { 
+    balance: usdcBalance, 
+    formatAmount,
+    isBalanceLoading: isUSDCLoading,
+    refetchBalance: refetchUSDCBalance,
+    hasSufficientBalance
+  } = useUSDC()
   
   const [formData, setFormData] = useState<DCAFormData>({
     investmentAmount: '',
@@ -75,17 +86,35 @@ export function DCAForm() {
     if (!amountPerTrade || parseFloat(amountPerTrade) <= 0) return 'Amount per trade must be greater than 0'
     if (!frequency || parseInt(frequency) <= 0) return 'Frequency must be greater than 0'
     
-    // Check fund pool balance
-    const investmentAmountBigInt = BigInt(Math.floor(parseFloat(investmentAmount) * 1e6))
+    // Check fund pool balance requirement
     if (!fundPoolBalance.isInitialized) return 'Please deposit USDC to FundPool first'
+    
+    // Validate investment amount limits
+    const investmentAmountBigInt = BigInt(Math.floor(parseFloat(investmentAmount) * 1e6))
+    const minInvestmentAmount = BigInt(DCA_CONFIG.MIN_TRADE_AMOUNT)
+    const maxInvestmentAmount = BigInt(DCA_CONFIG.MAX_TRADE_AMOUNT * parseInt(tradesCount))
+    
+    if (investmentAmountBigInt < minInvestmentAmount) {
+      return `Investment amount must be at least ${formatAmount(minInvestmentAmount)}`
+    }
+    if (investmentAmountBigInt > maxInvestmentAmount) {
+      return `Investment amount cannot exceed ${formatAmount(maxInvestmentAmount)} for ${tradesCount} trades`
+    }
+    
+    // Validate trades count
+    if (parseInt(tradesCount) < DCA_CONFIG.MIN_TRADES_COUNT || parseInt(tradesCount) > DCA_CONFIG.MAX_TRADES_COUNT) {
+      return `Number of trades must be between ${DCA_CONFIG.MIN_TRADES_COUNT} and ${DCA_CONFIG.MAX_TRADES_COUNT}`
+    }
     
     // Price conditions are optional
     if (minPrice && maxPrice) {
       if (parseFloat(minPrice) >= parseFloat(maxPrice)) return 'Minimum price must be less than maximum price'
+      if (parseFloat(minPrice) <= 0) return 'Minimum price must be greater than 0'
+      if (parseFloat(maxPrice) <= 0) return 'Maximum price must be greater than 0'
     }
 
     return null
-  }, [formData, fundPoolBalance])
+  }, [formData, fundPoolBalance, formatAmount])
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
@@ -211,6 +240,98 @@ export function DCAForm() {
             Set up your encrypted dollar-cost averaging strategy. All parameters are encrypted for maximum privacy.
           </CardDescription>
         </CardHeader>
+        
+        {/* Balance Overview Section */}
+        <div className="px-6 pb-4">
+          <div className="bg-gradient-to-r from-blue-50 to-green-50 rounded-lg p-4 border">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                <Wallet className="w-4 h-4" />
+                Available Balances
+              </h3>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  await Promise.all([refetchUSDCBalance(), refetchFundPoolBalance()])
+                }}
+                disabled={isUSDCLoading || isFundPoolLoading}
+              >
+                {isUSDCLoading || isFundPoolLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  'Refresh'
+                )}
+              </Button>
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* USDC Wallet Balance */}
+              <div className="flex items-center justify-between p-3 bg-white rounded-lg border">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                    <DollarSign className="w-4 h-4 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">USDC Wallet</p>
+                    <p className="text-xs text-muted-foreground">Available to deposit</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-mono font-medium">
+                    {isUSDCLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin inline" />
+                    ) : (
+                      formatAmount(usdcBalance)
+                    )}
+                  </p>
+                </div>
+              </div>
+              
+              {/* FundPool Balance */}
+              <div className="flex items-center justify-between p-3 bg-white rounded-lg border">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                    <Shield className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">FundPool</p>
+                    <p className="text-xs text-muted-foreground">Ready for DCA</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-mono font-medium">
+                    {isFundPoolLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin inline" />
+                    ) : (
+                      availableBalance
+                    )}
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            {/* Quick Actions */}
+            <div className="mt-3 flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowDepositModal(true)}
+                className="flex-1"
+              >
+                <ArrowDown className="w-4 h-4 mr-1" />
+                Deposit USDC
+              </Button>
+              {!fundPoolBalance.isInitialized && (
+                <div className="flex-1 text-center">
+                  <p className="text-xs text-amber-600 bg-amber-50 rounded px-2 py-1">
+                    Deposit USDC to FundPool before creating intents
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
         
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">

@@ -70,9 +70,21 @@ export function useIntentCollector() {
     data: batchStatus,
     isLoading: isBatchStatusLoading,
     refetch: refetchBatchStatus
-  } = useContractRead<[boolean, bigint, bigint[]]>(
+  } = useContractRead<[boolean, bigint]>(
     contract,
     'checkBatchReady',
+    [],
+    true
+  );
+
+  // Get ready batch details (includes intent IDs)
+  const {
+    data: readyBatchData,
+    isLoading: isReadyBatchLoading,
+    refetch: refetchReadyBatch
+  } = useContractRead<[bigint, bigint[]]>(
+    contract,
+    'getReadyBatch',
     [],
     true
   );
@@ -142,6 +154,7 @@ export function useIntentCollector() {
       await Promise.all([
         refetchUserIntents(),
         refetchBatchStatus(),
+        refetchReadyBatch(),
         refetchBatchStats()
       ]);
 
@@ -156,7 +169,7 @@ export function useIntentCollector() {
     } finally {
       setIsLoading(false);
     }
-  }, [submitIntentAsync, refetchUserIntents, refetchBatchStatus, refetchBatchStats]);
+  }, [submitIntentAsync, refetchUserIntents, refetchBatchStatus, refetchReadyBatch, refetchBatchStats]);
 
   /**
    * Get intent details by ID
@@ -192,15 +205,18 @@ export function useIntentCollector() {
     if (!batchStatus) {
       return {
         isReady: false,
-        batchId: 0n,
+        batchId: BigInt(0),
         intentIds: []
       };
     }
 
+    // Get intent IDs from readyBatchData if batch is ready
+    const intentIds = batchStatus[0] && readyBatchData ? readyBatchData[1] : [];
+
     return {
       isReady: batchStatus[0],
       batchId: batchStatus[1],
-      intentIds: batchStatus[2]
+      intentIds: intentIds
     };
   };
 
@@ -210,9 +226,9 @@ export function useIntentCollector() {
   const getBatchStats = (): BatchStats => {
     if (!batchStatsData) {
       return {
-        currentBatch: 0n,
-        pendingCount: 0n,
-        timeRemaining: 0n
+        currentBatch: BigInt(0),
+        pendingCount: BigInt(0),
+        timeRemaining: BigInt(0)
       };
     }
 
@@ -255,6 +271,7 @@ export function useIntentCollector() {
     isLoading,
     isUserIntentsLoading,
     isBatchStatusLoading,
+    isReadyBatchLoading,
     isBatchStatsLoading,
     error,
     
@@ -266,6 +283,7 @@ export function useIntentCollector() {
     // Refresh functions
     refetchUserIntents,
     refetchBatchStatus,
+    refetchReadyBatch,
     refetchBatchStats,
     
     // Contract availability

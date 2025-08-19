@@ -51,7 +51,7 @@ export function WithdrawModal({ isOpen, onClose, onSuccess }: WithdrawModalProps
   const isLoading = isFundPoolLoading || isTokenLoading;
 
   // Parse input amount
-  const parsedAmount = amount ? BigInt(Math.floor(parseFloat(amount) * 1e6)) : 0n;
+  const parsedAmount = amount ? BigInt(Math.floor(parseFloat(amount) * 1e6)) : BigInt(0);
   const hasValidAmount = parsedAmount > 0;
 
   /**

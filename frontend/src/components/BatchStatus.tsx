@@ -81,7 +81,7 @@ export function BatchStatus() {
     }
   }
 
-  const getStatusColor = (status: Batch['status']) => {
+  const getStatusColor = (status: BatchStatus) => {
     switch (status) {
       case 'collecting':
         return 'border-blue-200 bg-blue-50'
