@@ -1,3 +1,5 @@
+const webpack = require('webpack');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   webpack: (config) => {
@@ -7,6 +9,14 @@ const nextConfig = {
       net: false,
       tls: false,
     };
+
+    // Define global as window (similar to Vite's define)
+    config.plugins.push(
+      new webpack.DefinePlugin({
+        global: 'window',
+      })
+    );
+
     return config;
   },
   transpilePackages: ["@fhevm/fhevm"],
