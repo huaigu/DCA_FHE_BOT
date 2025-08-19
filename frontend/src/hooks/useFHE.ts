@@ -50,11 +50,11 @@ export function useFHE() {
   useEffect(() => {
     // Only initialize if we're in the browser and not already loaded
     if (typeof window !== 'undefined' && !isFHESDKLoaded()) {
-      initFHE()
+      void initFHE()
     } else if (isFHESDKLoaded()) {
       setStatus(prev => ({ ...prev, isLoaded: true }))
     }
-  }, [])
+  }, [initFHE])
 
   return {
     ...status,

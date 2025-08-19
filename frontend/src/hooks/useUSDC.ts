@@ -83,8 +83,7 @@ export function useUSDC() {
   const {
     data: allowance,
     isLoading: isAllowanceLoading,
-    refetch: refetchAllowance,
-    error: allowanceError
+    refetch: refetchAllowance
   } = useContractRead<bigint>(
     contract,
     'allowance',
@@ -224,7 +223,11 @@ export function useUSDC() {
    */
   const formatAmount = useCallback((amount: bigint, showSymbol = true): string => {
     const decimalsCount = typeof tokenInfo.decimals === 'number' ? tokenInfo.decimals : 6; // ensure it's a number
-    const divisor = BigInt(10) ** BigInt(decimalsCount);
+    // Create divisor by multiplying BigInt(10) decimalsCount times
+    let divisor = BigInt(1);
+    for (let i = 0; i < decimalsCount; i++) {
+      divisor = divisor * BigInt(10);
+    }
     const whole = amount / divisor;
     const fraction = amount % divisor;
     

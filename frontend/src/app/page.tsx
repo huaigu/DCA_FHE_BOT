@@ -1,8 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { DCAForm } from '@/components/DCAForm'
 import { BatchStatus } from '@/components/BatchStatus'
@@ -27,7 +26,7 @@ type TabType = 'create' | 'status' | 'balance'
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<TabType>('create')
-  const { isLoaded: isFHELoaded, isLoading: isFHELoading, isError: isFHEError, error: fheError, retry: retryFHE } = useFHE()
+  const { isLoaded: isFHELoaded, isLoading: isFHELoading, isError: isFHEError, retry: retryFHE } = useFHE()
 
   // Development: Test FHE integration (only show in development)
   const testFHE = async () => {

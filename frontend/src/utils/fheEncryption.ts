@@ -1,5 +1,5 @@
 import { BrowserProvider, JsonRpcSigner } from 'ethers'
-import { initSDK, createInstance, SepoliaConfig } from '@zama-fhe/relayer-sdk/web'
+import { initSDK, createInstance, SepoliaConfig } from '@zama-fhe/relayer-sdk/bundle'
 
 export interface EncryptedIntent {
   budget: bigint
