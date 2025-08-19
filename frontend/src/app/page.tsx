@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,8 @@ import { DCAForm } from '@/components/DCAForm'
 import { BatchStatus } from '@/components/BatchStatus'
 import { BalanceView } from '@/components/BalanceView'
 import { WalletConnect } from '@/components/WalletConnect'
+import { useFHE } from '@/hooks/useFHE'
+import { testFHEIntegration } from '@/utils/fheTest'
 import { 
   Shield, 
   TrendingUp, 
@@ -16,13 +18,24 @@ import {
   Github,
   ExternalLink,
   Zap,
-  Lock
+  Lock,
+  Loader2,
+  AlertCircle
 } from 'lucide-react'
 
 type TabType = 'create' | 'status' | 'balance'
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<TabType>('create')
+  const { isLoaded: isFHELoaded, isLoading: isFHELoading, isError: isFHEError, error: fheError, retry: retryFHE } = useFHE()
+
+  // Development: Test FHE integration (only show in development)
+  const testFHE = async () => {
+    if (process.env.NODE_ENV === 'development') {
+      const result = await testFHEIntegration()
+      console.log('FHE Test Result:', result)
+    }
+  }
 
   const tabs = [
     { id: 'create', label: 'Create Intent', icon: Shield },
@@ -61,8 +74,37 @@ export default function HomePage() {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.5 }}
-              className="flex-shrink-0 w-full lg:w-auto"
+              className="flex-shrink-0 w-full lg:w-auto flex flex-col lg:flex-row items-end lg:items-center gap-2"
             >
+              {/* FHE Status Indicator */}
+              <div className="flex items-center gap-2 px-3 py-2 bg-white/60 backdrop-blur-sm rounded-lg border text-sm">
+                {isFHELoading && (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                    <span className="text-blue-600">Loading FHE...</span>
+                  </>
+                )}
+                {isFHELoaded && (
+                  <>
+                    <Shield className="w-4 h-4 text-green-600" />
+                    <span className="text-green-600">FHE Ready</span>
+                    {process.env.NODE_ENV === 'development' && (
+                      <Button variant="ghost" size="sm" onClick={testFHE} className="h-6 px-2 text-xs">
+                        Test
+                      </Button>
+                    )}
+                  </>
+                )}
+                {isFHEError && (
+                  <>
+                    <AlertCircle className="w-4 h-4 text-red-600" />
+                    <span className="text-red-600">FHE Error</span>
+                    <Button variant="ghost" size="sm" onClick={retryFHE} className="h-6 px-2">
+                      Retry
+                    </Button>
+                  </>
+                )}
+              </div>
               <WalletConnect />
             </motion.div>
           </div>

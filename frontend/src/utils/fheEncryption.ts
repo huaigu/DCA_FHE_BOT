@@ -1,11 +1,5 @@
 import { BrowserProvider, JsonRpcSigner } from 'ethers'
-
-// 声明全局类型
-declare global {
-  interface Window {
-    [key: string]: any; // 允许访问任何全局属性
-  }
-}
+import { initSDK, createInstance, SepoliaConfig } from '@zama-fhe/relayer-sdk/web'
 
 export interface EncryptedIntent {
   budget: bigint
@@ -44,83 +38,36 @@ let fhevmInstance: any = null
 let sdkInitialized = false
 
 /**
- * 初始化 FHEVM 实例
- * 使用 CDN 加载的 SDK 和 Sepolia 配置
+ * 初始化 FHEVM 实例 - 使用 npm 包方式
  */
 export async function initializeFHE(): Promise<any> {
   try {
     if (!fhevmInstance) {
-      console.log('Checking available global objects...')
-      console.log('Available keys:', Object.keys(window).filter(key => 
-        key.toLowerCase().includes('relayer') || 
-        key.toLowerCase().includes('fhe') || 
-        key.toLowerCase().includes('zama')
-      ))
+      console.log('Initializing FHEVM using npm package...')
 
-      // 检查可能的全局对象名称
-      const possibleNames = ['RelayerSDK', 'FHE', 'Zama', 'relayerSDK', 'fhe']
-      let sdk = null
-
-      for (const name of possibleNames) {
-        if (window[name]) {
-          sdk = window[name]
-          console.log(`Found SDK at window.${name}:`, sdk)
-          break
-        }
-      }
-
-      if (!sdk) {
-        // 如果没有找到明确的SDK对象，检查是否有直接的函数
-        if (window.initSDK && window.createInstance) {
-          sdk = window
-          console.log('Found SDK functions directly on window object')
-        } else {
-          throw new Error('FHE SDK not found. Please ensure the FHE SDK is loaded via CDN.')
-        }
-      }
-
-      // 初始化 SDK
-      if (!sdkInitialized && sdk.initSDK) {
-        console.log('Initializing FHE SDK from CDN...')
-        await sdk.initSDK()
+      // 初始化 SDK (加载 WASM)
+      if (!sdkInitialized) {
+        console.log('Loading TFHE WASM...')
+        await initSDK()
         sdkInitialized = true
-        console.log('FHE SDK initialized successfully')
+        console.log('TFHE WASM loaded successfully')
       }
 
-      console.log('Creating FHEVM instance...')
-
-      // 尝试使用 SepoliaConfig 或手动配置
-      let config
-      if (sdk.SepoliaConfig) {
-        config = {
-          ...sdk.SepoliaConfig,
-          network: (window as any).ethereum || "https://eth-sepolia.public.blastapi.io",
-        }
-        console.log('Using SepoliaConfig:', config)
-      } else {
-        // 手动配置 Sepolia 参数
-        config = {
-          aclContractAddress: "0x687820221192C5B662b25367F70076A37bc79b6c",
-          kmsContractAddress: "0x1364cBBf2cDF5032C47d8226a6f6FBD2AFCDacAC",
-          inputVerifierContractAddress: "0xbc91f3daD1A5F19F8390c400196e58073B6a0BC4",
-          verifyingContractAddressDecryption: "0xb6E160B1ff80D67Bfe90A85eE06Ce0A2613607D1",
-          verifyingContractAddressInputVerification: "0x7048C39f048125eDa9d678AEbaDfB22F7900a29F",
-          chainId: 11155111, // Sepolia chain ID
-          gatewayChainId: 55815,
-          network: (window as any).ethereum || "https://eth-sepolia.public.blastapi.io",
-          relayerUrl: "https://relayer.testnet.zama.cloud",
-        }
-        console.log('Using manual Sepolia config:', config)
+      // 创建实例配置
+      const config = {
+        ...SepoliaConfig,
+        network: (window as any).ethereum || "https://eth-sepolia.public.blastapi.io"
       }
-
-      fhevmInstance = await sdk.createInstance(config)
-      console.log('FHEVM relayer SDK instance initialized successfully')
+      
+      console.log('Creating FHEVM instance with config:', config)
+      fhevmInstance = await createInstance(config)
+      console.log('FHEVM instance created successfully')
     }
+    
     return fhevmInstance
   } catch (error) {
-    console.error('Failed to initialize FHEVM relayer SDK:', error)
-    console.error('Error details:', error)
-    throw new Error('Failed to initialize FHE encryption. Please check console for details.')
+    console.error('Failed to initialize FHEVM:', error)
+    throw new Error(`Failed to initialize FHE encryption: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
 }
 
@@ -262,7 +209,7 @@ export async function decryptUserBalance(
     }
     
     // 解密 euint64 类型的余额
-    const decryptedValue = await fhevm.userDecryptEuint(
+    const decryptedValue = await fhevm.decrypt(
       FhevmType.euint64,
       encryptedBalance,
       contractAddress,
@@ -279,47 +226,28 @@ export async function decryptUserBalance(
 }
 
 /**
- * 检查 FHE SDK 是否已加载
+ * 检查 FHE SDK 是否已初始化
  */
 export function isFHESDKLoaded(): boolean {
-  const possibleNames = ['RelayerSDK', 'FHE', 'Zama', 'relayerSDK', 'fhe']
-  
-  for (const name of possibleNames) {
-    if (window[name]) {
-      return true
-    }
-  }
-  
-  // 检查直接函数
-  return !!(window.initSDK && window.createInstance)
+  return sdkInitialized && fhevmInstance !== null
 }
 
 /**
- * 等待 FHE SDK 加载完成
+ * 等待 FHE SDK 初始化完成
  */
-export function waitForFHESDK(timeout = 10000): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (isFHESDKLoaded()) {
-      resolve()
-      return
-    }
-    
-    const checkInterval = 100
-    const maxAttempts = timeout / checkInterval
-    let attempts = 0
-    
-    const interval = setInterval(() => {
-      attempts++
-      
-      if (isFHESDKLoaded()) {
-        clearInterval(interval)
-        resolve()
-      } else if (attempts >= maxAttempts) {
-        clearInterval(interval)
-        reject(new Error('Timeout waiting for FHE SDK to load'))
-      }
-    }, checkInterval)
-  })
+export async function waitForFHESDK(timeout = 10000): Promise<void> {
+  if (isFHESDKLoaded()) {
+    return
+  }
+  
+  const startTime = Date.now()
+  while (!isFHESDKLoaded() && (Date.now() - startTime) < timeout) {
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+  
+  if (!isFHESDKLoaded()) {
+    throw new Error('Timeout waiting for FHE SDK to initialize')
+  }
 }
 
 /**
@@ -336,7 +264,7 @@ export class FHEEncryption {
   async initialize(provider: BrowserProvider): Promise<void> {
     try {
       await initializeFHE()
-      console.log('FHE encryption initialized with dynamic SDK')
+      console.log('FHE encryption initialized with npm package')
     } catch (error) {
       console.error('Failed to initialize FHE encryption:', error)
       throw new Error('FHE initialization failed')
