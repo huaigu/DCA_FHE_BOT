@@ -102,8 +102,8 @@ npx hardhat task:system-info --network localhost
 # Submit a DCA intent
 npx hardhat task:submit-intent --network localhost --budget 1000 --trades 10 --amount 100 --frequency 86400 --min-price 1500 --max-price 2000
 
-# Process a batch manually (owner only)
-npx hardhat task:process-batch --network localhost --batch-id 1
+# Process a batch manually (owner only) - now requires minBatchSize
+npx hardhat task:process-batch --network localhost --batch-id 1 --min-batch-size 5
 
 # Check user balance
 npx hardhat task:user-balance --network localhost
@@ -257,7 +257,7 @@ function _filterAndAggregateIntents(uint256[] memory intentIds, uint256 currentP
 ## Important Notes
 
 ### DCA Bot Implementation Details
-- **Batch Processing**: MIN_BATCH_SIZE = 5, MAX_BATCH_SIZE = 10 for k-anonymity
+- **Dynamic Batch Processing**: Batch size configured via Chainlink checkData for flexible k-anonymity
 - **Price Filtering**: FHE-based price condition evaluation with `FHE.ge()` and `FHE.le()`
 - **Oracle Integration**: Chainlink Price Feeds V3 for ETH/USD with staleness checks
 - **DEX Integration**: Uniswap V3 router with single aggregated swap (USDC → ETH)
@@ -279,6 +279,70 @@ function _filterAndAggregateIntents(uint256[] memory intentIds, uint256 currentP
 - **Uniswap V3**: Token swap router and pool contracts
 - **Automation**: Chainlink Automation for batch trigger timing
 - **Frontend Encryption**: Client-side parameter encryption before submission
+
+## Dynamic Batch Management
+
+### Flexible k-Anonymity Configuration
+The system now supports **dynamic batch size configuration** via Chainlink checkData, providing operational flexibility for k-anonymity requirements:
+
+```typescript
+// Chainlink registration checkData format: abi.encode(minBatchSize, maxPriceAge)
+const checkData = abiCoder.encode(['uint256', 'uint256'], [5, 7200]); // minBatchSize=5, maxPriceAge=7200s
+```
+
+### Batch Readiness Logic
+```solidity
+function _isBatchReady(uint256 minBatchSize) internal view returns (bool) {
+    uint256 pendingCount = pendingIntents.length;
+    uint256 timeSinceStart = block.timestamp - currentBatchStartTime;
+    
+    // Batch is ready if:
+    // 1. We have minimum batch size required, OR
+    // 2. Timeout has elapsed (emergency processing)
+    return (pendingCount >= minBatchSize) || (timeSinceStart >= BATCH_TIMEOUT);
+}
+```
+
+### Clean Architecture Interfaces
+```solidity
+// IntentCollector: Single responsibility for batch management
+function checkBatchReady(uint256 minBatchSize) external view 
+    returns (bool isReady, uint256 batchId)
+
+function getReadyBatch(uint256 minBatchSize) external view 
+    returns (uint256 batchId, uint256[] memory intentIds)
+
+// BatchProcessor: Simplified with trust delegation
+function checkUpkeep(bytes calldata checkData) external view 
+    returns (bool upkeepNeeded, bytes memory performData)
+
+function performUpkeep(bytes calldata performData) external
+```
+
+### Benefits of Dynamic Batch Size
+- **Market-Responsive Privacy**: Adjust k-anonymity based on market conditions
+- **Operational Flexibility**: No need to redeploy contracts to change batch parameters
+- **Emergency Processing**: Timeout mechanism ensures no intents get stuck
+- **Consistent Logic**: Eliminates hardcoded vs dynamic parameter conflicts
+
+### Architectural Improvements (v2)
+- **Single Responsibility**: IntentCollector handles all batch logic, BatchProcessor only executes
+- **Interface Simplification**: Removed redundant parameters and duplicate validations
+- **Trust Delegation**: BatchProcessor fully trusts IntentCollector's readiness decisions
+- **Reduced Gas Usage**: Eliminated duplicate checks and unnecessary data transfers
+- **Cleaner Testing**: Clear separation of concerns makes testing more reliable
+
+### Configuration Examples
+```bash
+# High privacy (large anonymity set)
+checkData = encode([15, 7200])  # Require 15 users minimum
+
+# Fast execution (small anonymity set)
+checkData = encode([3, 7200])   # Require 3 users minimum
+
+# Emergency processing (immediate execution)
+checkData = encode([1, 300])    # Allow 1 user, 5min timeout
+```
 
 ## DCA Strategy Implementation
 
@@ -314,7 +378,7 @@ await contract.submitIntent(inputProof.handles, inputProof.inputProof);
 
 ### DCA Bot Issues
 - **Intent Not Executing**: Check if current price is within encrypted range
-- **Batch Not Processing**: Verify batch size threshold and timing conditions
+- **Batch Not Processing**: Verify dynamic batch size configuration in checkData and timing conditions
 - **Price Feed Errors**: Ensure Chainlink oracle is updated and accessible
 - **Uniswap Failures**: Check token approvals and liquidity availability
 

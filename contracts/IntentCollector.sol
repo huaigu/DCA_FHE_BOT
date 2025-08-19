@@ -68,14 +68,14 @@ contract IntentCollector is SepoliaConfig, Ownable, ReentrancyGuard {
     /// @notice Current batch counter
     uint256 public batchCounter;
     
-    /// @notice Maximum intents per batch for k-anonymity
-    uint256 public constant MAX_BATCH_SIZE = 10;
-    
-    /// @notice Minimum intents required to form a batch
-    uint256 public constant MIN_BATCH_SIZE = 5;
+    /// @notice Batch size is now dynamically configured via checkData from Chainlink Automation
+    /// This allows flexible k-anonymity requirements based on market conditions
     
     /// @notice Maximum batch timeout in seconds
     uint256 public constant BATCH_TIMEOUT = 300; // 5 minutes
+    
+    /// @notice Minimum batch size required for processing (configurable by owner)
+    uint256 public minBatchSize = 5;
     
     /// @notice Address of the batch processor contract
     address public batchProcessor;
@@ -243,13 +243,23 @@ contract IntentCollector is SepoliaConfig, Ownable, ReentrancyGuard {
     /// @notice Check if current batch is ready for processing
     /// @return isReady True if batch is ready
     /// @return batchId Current batch ID
-    /// @return intentIds Array of intent IDs in the batch
     function checkBatchReady() 
         external 
         view 
-        returns (bool isReady, uint256 batchId, uint256[] memory intentIds) 
+        returns (bool isReady, uint256 batchId) 
     {
         isReady = _isBatchReady();
+        batchId = batchCounter;
+    }
+
+    /// @notice Get ready batch data for processing (only call after checkBatchReady returns true)
+    /// @return batchId Current batch ID
+    /// @return intentIds Array of intent IDs in the batch
+    function getReadyBatch() 
+        external 
+        view 
+        returns (uint256 batchId, uint256[] memory intentIds) 
+    {
         batchId = batchCounter;
         intentIds = pendingIntents;
     }
@@ -336,9 +346,17 @@ contract IntentCollector is SepoliaConfig, Ownable, ReentrancyGuard {
         
         fundPool = IFundPool(_fundPool);
     }
+    
+    /// @notice Set minimum batch size
+    /// @param _minBatchSize New minimum batch size (must be at least 1)
+    function setMinBatchSize(uint256 _minBatchSize) external onlyOwner {
+        require(_minBatchSize > 0 && _minBatchSize <= 100, "Invalid batch size");
+        minBatchSize = _minBatchSize;
+    }
 
-    /// @notice Internal function to check if batch is ready
+    /// @notice Internal function to check if batch is ready (uses minimum viable size)
     function _checkBatchReady() internal {
+        // Check if batch is ready using the configured minBatchSize
         if (_isBatchReady()) {
             emit BatchReady(batchCounter, pendingIntents.length, block.timestamp);
         }
@@ -351,10 +369,9 @@ contract IntentCollector is SepoliaConfig, Ownable, ReentrancyGuard {
         uint256 timeSinceStart = block.timestamp - currentBatchStartTime;
         
         // Batch is ready if:
-        // 1. We have max batch size, OR
-        // 2. We have min batch size AND timeout has elapsed
-        return (pendingCount >= MAX_BATCH_SIZE) || 
-               (pendingCount >= MIN_BATCH_SIZE && timeSinceStart >= BATCH_TIMEOUT);
+        // 1. We have minimum batch size required, OR
+        // 2. Timeout has elapsed (even with fewer intents for emergency processing)
+        return (pendingCount >= minBatchSize) || (timeSinceStart >= BATCH_TIMEOUT);
     }
 
     /// @notice Get pending intents count

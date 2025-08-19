@@ -1,14 +1,14 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { ethers, fhevm } from "hardhat";
-import { 
-  BatchProcessor, 
+import {
+  BatchProcessor,
   BatchProcessor__factory,
   IntentCollector,
   IntentCollector__factory,
   ConfidentialToken,
   ConfidentialToken__factory,
   FundPool,
-  FundPool__factory
+  FundPool__factory,
 } from "../types";
 import { expect } from "chai";
 import { FhevmType } from "@fhevm/hardhat-plugin";
@@ -25,28 +25,28 @@ const MockPriceFeed = {
   async deploy() {
     const factory = await ethers.getContractFactory("MockPriceFeed");
     return await factory.deploy();
-  }
+  },
 };
 
 const MockUniswapRouter = {
   async deploy() {
     const factory = await ethers.getContractFactory("MockUniswapRouter");
     return await factory.deploy();
-  }
+  },
 };
 
 const MockUSDC = {
   async deploy() {
     const factory = await ethers.getContractFactory("MockERC20");
     return await factory.deploy("USD Coin", "USDC", 6);
-  }
+  },
 };
 
 const MockWETH = {
   async deploy() {
     const factory = await ethers.getContractFactory("MockERC20");
     return await factory.deploy("Wrapped ETH", "WETH", 18);
-  }
+  },
 };
 
 describe("BatchProcessor", function () {
@@ -67,7 +67,7 @@ describe("BatchProcessor", function () {
       deployer: ethSigners[0],
       alice: ethSigners[1],
       bob: ethSigners[2],
-      charlie: ethSigners[3]
+      charlie: ethSigners[3],
     };
 
     // Skip tests on non-mock networks
@@ -94,21 +94,20 @@ describe("BatchProcessor", function () {
     intentCollector = (await intentCollectorFactory.deploy(signers.deployer.address)) as IntentCollector;
 
     // Deploy ConfidentialToken
-    const confidentialTokenFactory = (await ethers.getContractFactory("ConfidentialToken")) as ConfidentialToken__factory;
+    const confidentialTokenFactory = (await ethers.getContractFactory(
+      "ConfidentialToken",
+    )) as ConfidentialToken__factory;
     confidentialToken = (await confidentialTokenFactory.deploy(
       "Confidential ETH",
       "cETH",
       18,
       await mockWETH.getAddress(),
-      signers.deployer.address
+      signers.deployer.address,
     )) as ConfidentialToken;
 
     // Deploy FundPool
     const fundPoolFactory = (await ethers.getContractFactory("FundPool")) as FundPool__factory;
-    fundPool = (await fundPoolFactory.deploy(
-      await mockUSDC.getAddress(),
-      signers.deployer.address
-    )) as FundPool;
+    fundPool = (await fundPoolFactory.deploy(await mockUSDC.getAddress(), signers.deployer.address)) as FundPool;
 
     // Deploy BatchProcessor
     const batchProcessorFactory = (await ethers.getContractFactory("BatchProcessor")) as BatchProcessor__factory;
@@ -119,9 +118,9 @@ describe("BatchProcessor", function () {
       await mockRouter.getAddress(),
       await mockUSDC.getAddress(),
       await mockWETH.getAddress(),
-      signers.deployer.address
+      signers.deployer.address,
     )) as BatchProcessor;
-    
+
     batchProcessorAddress = await batchProcessor.getAddress();
 
     // Configure contracts
@@ -130,7 +129,7 @@ describe("BatchProcessor", function () {
     await fundPool.setIntentCollector(await intentCollector.getAddress());
     await fundPool.setBatchProcessor(batchProcessorAddress);
     await confidentialToken.setBatchProcessor(batchProcessorAddress);
-    
+
     // Set up test data and balances
     await setupTestData();
   });
@@ -151,16 +150,16 @@ describe("BatchProcessor", function () {
     await fundPool.testInitializeBalance(signers.alice.address, amount);
     await fundPool.testInitializeBalance(signers.bob.address, amount);
     await fundPool.testInitializeBalance(signers.charlie.address, amount);
-    
+
     // Mint some USDC to FundPool for withdrawals
     await mockUSDC.mint(await fundPool.getAddress(), ethers.parseUnits("30000", 6));
-    
+
     // Update user states to ACTIVE
     await intentCollector.connect(signers.deployer).setBatchProcessor(signers.deployer.address);
     await intentCollector.connect(signers.deployer).updateUserState(signers.alice.address, 1); // ACTIVE
     await intentCollector.connect(signers.deployer).updateUserState(signers.bob.address, 1); // ACTIVE
     await intentCollector.connect(signers.deployer).updateUserState(signers.charlie.address, 1); // ACTIVE
-    
+
     // Reset batch processor for IntentCollector
     await intentCollector.connect(signers.deployer).setBatchProcessor(batchProcessorAddress);
   }
@@ -173,10 +172,6 @@ describe("BatchProcessor", function () {
       expect(await batchProcessor.uniswapRouter()).to.equal(await mockRouter.getAddress());
       expect(await batchProcessor.usdcToken()).to.equal(await mockUSDC.getAddress());
       expect(await batchProcessor.wethAddress()).to.equal(await mockWETH.getAddress());
-    });
-
-    it("should not be paused initially", async function () {
-      expect(await batchProcessor.paused()).to.be.false;
     });
   });
 
@@ -195,7 +190,7 @@ describe("BatchProcessor", function () {
         minPriceExt: encryptedInput.handles[4],
         minPriceProof: encryptedInput.inputProof,
         maxPriceExt: encryptedInput.handles[5],
-        maxPriceProof: encryptedInput.inputProof
+        maxPriceProof: encryptedInput.inputProof,
       };
     }
 
@@ -203,7 +198,7 @@ describe("BatchProcessor", function () {
       for (let i = 0; i < count; i++) {
         const signer = i % 2 === 0 ? signers.alice : signers.bob;
         const intentCollectorAddress = await intentCollector.getAddress();
-        
+
         const encryptedInput = await fhevm
           .createEncryptedInput(intentCollectorAddress, signer.address)
           .add64(BigInt(1000 + i) * 1000000n) // budget
@@ -215,29 +210,23 @@ describe("BatchProcessor", function () {
           .encrypt();
 
         const params = createSubmitIntentParams(encryptedInput);
-        await intentCollector
-          .connect(signer)
-          .submitIntent(params);
+        await intentCollector.connect(signer).submitIntent(params);
       }
     }
 
     it("should check upkeep correctly when batch is ready", async function () {
-      // Submit intents to make batch ready (need MAX_BATCH_SIZE = 10)
-      await submitTestIntents(10);
+      // Submit intents to make batch ready (need 5 intents for default minBatchSize)
+      await submitTestIntents(5);
 
       // Check upkeep
       const [upkeepNeeded, performData] = await batchProcessor.checkUpkeep("0x");
-      
+
       expect(upkeepNeeded).to.be.true;
       expect(performData).to.not.equal("0x");
-      
-      // Decode perform data to verify it contains batch info
-      const decodedData = ethers.AbiCoder.defaultAbiCoder().decode(
-        ["uint256", "uint256[]"], 
-        performData
-      );
+
+      // Decode perform data to verify it contains batch info (new format: batchId only)
+      const decodedData = ethers.AbiCoder.defaultAbiCoder().decode(["uint256"], performData);
       expect(decodedData[0]).to.equal(1); // batchId
-      expect(decodedData[1].length).to.equal(10); // intentIds (MAX_BATCH_SIZE)
     });
 
     it("should not need upkeep when no batch is ready", async function () {
@@ -245,7 +234,7 @@ describe("BatchProcessor", function () {
       await submitTestIntents(2);
 
       const [upkeepNeeded, performData] = await batchProcessor.checkUpkeep("0x");
-      
+
       expect(upkeepNeeded).to.be.false;
       expect(performData).to.equal("0x");
     });
@@ -258,20 +247,13 @@ describe("BatchProcessor", function () {
       await batchProcessor.connect(signers.deployer).setAutomationEnabled(false);
 
       const [upkeepNeeded, performData] = await batchProcessor.checkUpkeep("0x");
-      
+
       expect(upkeepNeeded).to.be.false;
     });
 
-    it("should not need upkeep when contract is paused", async function () {
-      // Submit intents to make batch ready (need MAX_BATCH_SIZE = 10)
-      await submitTestIntents(10);
-
-      // Pause contract
-      await batchProcessor.connect(signers.deployer).pause();
-
-      const [upkeepNeeded, performData] = await batchProcessor.checkUpkeep("0x");
-      
-      expect(upkeepNeeded).to.be.false;
+    // Pause functionality removed from contract, test skipped
+    it.skip("should not need upkeep when contract is paused", async function () {
+      // This test is skipped as pause functionality was removed
     });
 
     it("should not need upkeep with stale price data", async function () {
@@ -284,11 +266,11 @@ describe("BatchProcessor", function () {
         180000000000,
         Math.floor(Date.now() / 1000) - 7200, // 2 hours ago
         Math.floor(Date.now() / 1000) - 7200,
-        1
+        1,
       );
 
       const [upkeepNeeded, performData] = await batchProcessor.checkUpkeep("0x");
-      
+
       expect(upkeepNeeded).to.be.false;
     });
   });
@@ -301,18 +283,18 @@ describe("BatchProcessor", function () {
         180000000000, // $1800
         Math.floor(Date.now() / 1000) - 100,
         Math.floor(Date.now() / 1000),
-        1
+        1,
       );
 
       // Set up mock router to return some ETH for swaps
       await mockRouter.setSwapResult(ethers.parseEther("1")); // 1 ETH return
-      
+
       // Give mock router WETH for swap outputs
       await mockWETH.mint(await mockRouter.getAddress(), ethers.parseEther("100"));
-      
+
       // Give batch processor some USDC for testing
       await mockUSDC.mint(batchProcessorAddress, ethers.parseUnits("10000", 6)); // 10,000 USDC
-      
+
       // Also approve BatchProcessor to transfer from FundPool for batch processing
       await mockUSDC.connect(signers.deployer).approve(batchProcessorAddress, ethers.MaxUint256);
     });
@@ -331,7 +313,7 @@ describe("BatchProcessor", function () {
         minPriceExt: encryptedInput.handles[4],
         minPriceProof: encryptedInput.inputProof,
         maxPriceExt: encryptedInput.handles[5],
-        maxPriceProof: encryptedInput.inputProof
+        maxPriceProof: encryptedInput.inputProof,
       };
     }
 
@@ -340,7 +322,7 @@ describe("BatchProcessor", function () {
       for (let i = 0; i < 10; i++) {
         const signer = i % 2 === 0 ? signers.alice : signers.bob;
         const intentCollectorAddress = await intentCollector.getAddress();
-        
+
         const encryptedInput = await fhevm
           .createEncryptedInput(intentCollectorAddress, signer.address)
           .add64(BigInt(1000 + i) * 1000000n) // budget
@@ -352,9 +334,7 @@ describe("BatchProcessor", function () {
           .encrypt();
 
         const params = createSubmitIntentParams(encryptedInput);
-        await intentCollector
-          .connect(signer)
-          .submitIntent(params);
+        await intentCollector.connect(signer).submitIntent(params);
       }
 
       // Manually trigger batch processing
@@ -363,10 +343,10 @@ describe("BatchProcessor", function () {
 
     it("should allow owner to manually trigger batch processing", async function () {
       const tx = await submitAndProcessBatch();
-      
+
       // Check that batch was processed
       expect(await batchProcessor.lastProcessedBatch()).to.equal(1);
-      
+
       // Check batch result
       const batchResult = await batchProcessor.getBatchResult(1);
       expect(batchResult.batchId).to.equal(1);
@@ -379,7 +359,7 @@ describe("BatchProcessor", function () {
       for (let i = 0; i < 10; i++) {
         const signer = i % 2 === 0 ? signers.alice : signers.bob;
         const intentCollectorAddress = await intentCollector.getAddress();
-        
+
         const encryptedInput = await fhevm
           .createEncryptedInput(intentCollectorAddress, signer.address)
           .add64(BigInt(1000 + i) * 1000000n)
@@ -391,15 +371,12 @@ describe("BatchProcessor", function () {
           .encrypt();
 
         const params = createSubmitIntentParams(encryptedInput);
-        await intentCollector
-          .connect(signer)
-          .submitIntent(params);
+        await intentCollector.connect(signer).submitIntent(params);
       }
 
-      await expect(
-        batchProcessor.connect(signers.deployer).manualTriggerBatch(1)
-      ).to.emit(batchProcessor, "AutomationTriggered")
-       .withArgs(1, "Manual Trigger");
+      await expect(batchProcessor.connect(signers.deployer).manualTriggerBatch(1))
+        .to.emit(batchProcessor, "AutomationTriggered")
+        .withArgs(1, "Manual Trigger");
     });
 
     it("should emit BatchProcessed event after successful processing", async function () {
@@ -407,7 +384,7 @@ describe("BatchProcessor", function () {
       for (let i = 0; i < 10; i++) {
         const signer = i % 2 === 0 ? signers.alice : signers.bob;
         const intentCollectorAddress = await intentCollector.getAddress();
-        
+
         const encryptedInput = await fhevm
           .createEncryptedInput(intentCollectorAddress, signer.address)
           .add64(BigInt(1000 + i) * 1000000n)
@@ -419,28 +396,25 @@ describe("BatchProcessor", function () {
           .encrypt();
 
         const params = createSubmitIntentParams(encryptedInput);
-        await intentCollector
-          .connect(signer)
-          .submitIntent(params);
+        await intentCollector.connect(signer).submitIntent(params);
       }
 
-      await expect(
-        batchProcessor.connect(signers.deployer).manualTriggerBatch(1)
-      ).to.emit(batchProcessor, "BatchProcessed");
+      await expect(batchProcessor.connect(signers.deployer).manualTriggerBatch(1)).to.emit(
+        batchProcessor,
+        "BatchProcessed",
+      );
     });
 
     it("should revert manual trigger from non-owner", async function () {
-      await expect(
-        batchProcessor.connect(signers.alice).manualTriggerBatch(1)
-      ).to.be.revertedWithCustomError(batchProcessor, "OwnableUnauthorizedAccount");
+      await expect(batchProcessor.connect(signers.alice).manualTriggerBatch(1)).to.be.revertedWithCustomError(
+        batchProcessor,
+        "OwnableUnauthorizedAccount",
+      );
     });
 
-    it("should revert manual trigger when paused", async function () {
-      await batchProcessor.connect(signers.deployer).pause();
-      
-      await expect(
-        batchProcessor.connect(signers.deployer).manualTriggerBatch(1)
-      ).to.be.revertedWithCustomError(batchProcessor, "EnforcedPause");
+    // Pause functionality removed from contract, test skipped
+    it.skip("should revert manual trigger when paused", async function () {
+      // This test is skipped as pause functionality was removed
     });
 
     it("should handle batch with no valid intents", async function () {
@@ -450,14 +424,14 @@ describe("BatchProcessor", function () {
         100000000000, // $1000 (below all minPrice of $1500)
         Math.floor(Date.now() / 1000) - 100,
         Math.floor(Date.now() / 1000),
-        1
+        1,
       );
 
       // Submit intents
       for (let i = 0; i < 10; i++) {
         const signer = i % 2 === 0 ? signers.alice : signers.bob;
         const intentCollectorAddress = await intentCollector.getAddress();
-        
+
         const encryptedInput = await fhevm
           .createEncryptedInput(intentCollectorAddress, signer.address)
           .add64(BigInt(1000 + i) * 1000000n)
@@ -469,14 +443,12 @@ describe("BatchProcessor", function () {
           .encrypt();
 
         const params = createSubmitIntentParams(encryptedInput);
-        await intentCollector
-          .connect(signer)
-          .submitIntent(params);
+        await intentCollector.connect(signer).submitIntent(params);
       }
 
       // Process batch
       await batchProcessor.connect(signers.deployer).manualTriggerBatch(1);
-      
+
       // Check batch result - should succeed but with 0 swapped amount
       const batchResult = await batchProcessor.getBatchResult(1);
       expect(batchResult.success).to.be.true;
@@ -488,13 +460,13 @@ describe("BatchProcessor", function () {
     beforeEach(async function () {
       // Set up mock router to return some ETH for swaps
       await mockRouter.setSwapResult(ethers.parseEther("1")); // 1 ETH return
-      
+
       // Give mock router WETH for swap outputs
       await mockWETH.mint(await mockRouter.getAddress(), ethers.parseEther("100"));
-      
+
       // Give batch processor some USDC for testing
       await mockUSDC.mint(batchProcessorAddress, ethers.parseUnits("10000", 6)); // 10,000 USDC
-      
+
       // Also approve BatchProcessor to transfer from FundPool for batch processing
       await mockUSDC.connect(signers.deployer).approve(batchProcessorAddress, ethers.MaxUint256);
     });
@@ -513,7 +485,7 @@ describe("BatchProcessor", function () {
         minPriceExt: encryptedInput.handles[4],
         minPriceProof: encryptedInput.inputProof,
         maxPriceExt: encryptedInput.handles[5],
-        maxPriceProof: encryptedInput.inputProof
+        maxPriceProof: encryptedInput.inputProof,
       };
     }
 
@@ -524,12 +496,12 @@ describe("BatchProcessor", function () {
         180000000000, // $1800
         Math.floor(Date.now() / 1000) - 100,
         Math.floor(Date.now() / 1000),
-        1
+        1,
       );
 
       // Submit intents with different price ranges
       const intentCollectorAddress = await intentCollector.getAddress();
-      
+
       // Intent 1: Price in range ($1500-$2000)
       const encryptedInput1 = await fhevm
         .createEncryptedInput(intentCollectorAddress, signers.alice.address)
@@ -576,7 +548,7 @@ describe("BatchProcessor", function () {
 
       // Process batch
       await batchProcessor.connect(signers.deployer).manualTriggerBatch(1);
-      
+
       // Check batch result
       const batchResult = await batchProcessor.getBatchResult(1);
       expect(batchResult.success).to.be.true;
@@ -590,14 +562,14 @@ describe("BatchProcessor", function () {
         300000000000, // $3000
         Math.floor(Date.now() / 1000) - 100,
         Math.floor(Date.now() / 1000),
-        1
+        1,
       );
 
       // Submit intents with low price ranges
       for (let i = 0; i < 5; i++) {
         const signer = i % 2 === 0 ? signers.alice : signers.bob;
         const intentCollectorAddress = await intentCollector.getAddress();
-        
+
         const encryptedInput = await fhevm
           .createEncryptedInput(intentCollectorAddress, signer.address)
           .add64(1000n * 1000000n)
@@ -614,7 +586,7 @@ describe("BatchProcessor", function () {
 
       // Process batch
       await batchProcessor.connect(signers.deployer).manualTriggerBatch(1);
-      
+
       // Check batch result
       const batchResult = await batchProcessor.getBatchResult(1);
       expect(batchResult.success).to.be.true;
@@ -623,32 +595,29 @@ describe("BatchProcessor", function () {
   });
 
   describe("Access Control", function () {
-    it("should allow owner to pause and unpause", async function () {
-      await batchProcessor.connect(signers.deployer).pause();
-      expect(await batchProcessor.paused()).to.be.true;
-      
-      await batchProcessor.connect(signers.deployer).unpause();
-      expect(await batchProcessor.paused()).to.be.false;
+    // Pause functionality removed from contract, test skipped
+    it.skip("should allow owner to pause and unpause", async function () {
+      // This test is skipped as pause functionality was removed
     });
 
-    it("should revert pause from non-owner", async function () {
-      await expect(
-        batchProcessor.connect(signers.alice).pause()
-      ).to.be.revertedWithCustomError(batchProcessor, "OwnableUnauthorizedAccount");
+    // Pause functionality removed from contract, test skipped
+    it.skip("should revert pause from non-owner", async function () {
+      // This test is skipped as pause functionality was removed
     });
 
     it("should allow owner to set automation enabled", async function () {
       await batchProcessor.connect(signers.deployer).setAutomationEnabled(false);
       expect(await batchProcessor.automationEnabled()).to.be.false;
-      
+
       await batchProcessor.connect(signers.deployer).setAutomationEnabled(true);
       expect(await batchProcessor.automationEnabled()).to.be.true;
     });
 
     it("should revert setAutomationEnabled from non-owner", async function () {
-      await expect(
-        batchProcessor.connect(signers.alice).setAutomationEnabled(false)
-      ).to.be.revertedWithCustomError(batchProcessor, "OwnableUnauthorizedAccount");
+      await expect(batchProcessor.connect(signers.alice).setAutomationEnabled(false)).to.be.revertedWithCustomError(
+        batchProcessor,
+        "OwnableUnauthorizedAccount",
+      );
     });
   });
 
@@ -656,24 +625,18 @@ describe("BatchProcessor", function () {
     it("should allow owner to recover stuck tokens", async function () {
       const amount = ethers.parseUnits("1000", 6);
       await mockUSDC.mint(batchProcessorAddress, amount);
-      
+
       const ownerBalanceBefore = await mockUSDC.balanceOf(signers.deployer.address);
-      
-      await batchProcessor.connect(signers.deployer).recoverToken(
-        await mockUSDC.getAddress(),
-        amount
-      );
-      
+
+      await batchProcessor.connect(signers.deployer).recoverToken(await mockUSDC.getAddress(), amount);
+
       const ownerBalanceAfter = await mockUSDC.balanceOf(signers.deployer.address);
       expect(ownerBalanceAfter - ownerBalanceBefore).to.equal(amount);
     });
 
     it("should revert recover from non-owner", async function () {
       await expect(
-        batchProcessor.connect(signers.alice).recoverToken(
-          await mockUSDC.getAddress(),
-          100
-        )
+        batchProcessor.connect(signers.alice).recoverToken(await mockUSDC.getAddress(), 100),
       ).to.be.revertedWithCustomError(batchProcessor, "OwnableUnauthorizedAccount");
     });
   });

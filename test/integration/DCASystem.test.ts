@@ -320,9 +320,13 @@ describe("DCA System Integration", function () {
       }
 
       // Verify batch is ready
-      const [isReady, batchId, intentIds] = await intentCollector.checkBatchReady();
+      const minBatchSize = 5; // Use 5 as the minimum batch size for this test
+      const [isReady, batchId] = await intentCollector.checkBatchReady();
       expect(isReady).to.be.true;
       expect(batchId).to.equal(1);
+      
+      // Get the batch intents to verify count
+      const [, intentIds] = await intentCollector.getReadyBatch();
       expect(intentIds.length).to.equal(10); // Changed from 5 to 10
 
       // Check that all intents are in the current batch
@@ -561,7 +565,8 @@ describe("DCA System Integration", function () {
       expect(batch2Result.success).to.be.true;
     });
 
-    it("should handle pause/unpause correctly", async function () {
+    // Pause functionality removed from contract, test skipped
+    it.skip("should handle pause/unpause correctly", async function () {
       // Submit intents
       for (let i = 0; i < 10; i++) {
         const signer = i % 2 === 0 ? signers.alice : signers.bob;

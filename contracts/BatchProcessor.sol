@@ -5,7 +5,6 @@ import {FHE, euint32, euint64, ebool} from "@fhevm/solidity/lib/FHE.sol";
 import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
 import {IntentCollector} from "./IntentCollector.sol";
 import {ConfidentialToken} from "./ConfidentialToken.sol";
@@ -17,7 +16,7 @@ import {IChainlinkAutomation} from "./interfaces/IChainlinkAutomation.sol";
 /// @title BatchProcessor
 /// @notice Core contract for processing DCA batches with FHE price filtering and aggregation
 /// @dev Integrates Chainlink price feeds, Uniswap V3 DEX, and Chainlink Automation
-contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, Pausable, IChainlinkAutomation {
+contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, IChainlinkAutomation {
     /// @notice Structure for batch processing result
     struct BatchResult {
         uint256 batchId;
@@ -132,7 +131,7 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, Pausable, IC
     }
 
     /// @notice Check if upkeep is needed (Chainlink Automation)
-    /// @param checkData Data passed from Chainlink during registration (optional configuration)
+    /// @param checkData Data passed from Chainlink during registration (ignored)
     /// @return upkeepNeeded True if batch processing is needed
     /// @return performData Data to pass to performUpkeep
     function checkUpkeep(bytes calldata checkData)
@@ -141,35 +140,19 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, Pausable, IC
         override
         returns (bool upkeepNeeded, bytes memory performData)
     {
-        // Basic state checks
-        if (!automationEnabled || paused()) {
+        checkData; // Silence unused parameter warning
+        
+        // Basic state check
+        if (!automationEnabled) {
             return (false, "");
         }
         
-        // Parse checkData for optional configuration (if provided)
-        uint256 minBatchSize = 5; // Default minimum batch size
-        uint256 maxPriceAge = PRICE_STALENESS_THRESHOLD; // Default price staleness
-        
-        if (checkData.length > 0) {
-            // Decode optional configuration from checkData
-            // Format: abi.encode(minBatchSize, maxPriceAge)
-            try this.decodeCheckData(checkData) returns (uint256 _minBatchSize, uint256 _maxPriceAge) {
-                if (_minBatchSize > 0 && _minBatchSize <= 50) { // Reasonable bounds
-                    minBatchSize = _minBatchSize;
-                }
-                if (_maxPriceAge > 0 && _maxPriceAge <= 7200) { // Max 2 hours
-                    maxPriceAge = _maxPriceAge;
-                }
-            } catch {
-                // If checkData parsing fails, use defaults
-            }
-        }
-        
         // Check if there's a batch ready for processing
-        (bool isReady, uint256 batchId, uint256[] memory intentIds) = intentCollector.checkBatchReady();
+        (bool isReady, uint256 batchId) = intentCollector.checkBatchReady();
         
-        if (isReady && batchId > lastProcessedBatch && intentIds.length >= minBatchSize) {
-            // Validate price data freshness with configurable threshold
+        // Trust IntentCollector's batch readiness logic completely
+        if (isReady && batchId > lastProcessedBatch) {
+            // Validate price data freshness
             try priceFeed.latestRoundData() returns (
                 uint80 /*roundId*/,
                 int256 price,
@@ -177,9 +160,9 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, Pausable, IC
                 uint256 updatedAt,
                 uint80 /*answeredInRound*/
             ) {
-                if (price > 0 && updatedAt > block.timestamp - maxPriceAge) {
+                if (price > 0 && updatedAt > block.timestamp - PRICE_STALENESS_THRESHOLD) {
                     upkeepNeeded = true;
-                    performData = abi.encode(batchId, intentIds, minBatchSize);
+                    performData = abi.encode(batchId);
                 }
             } catch {
                 // Price feed failed, don't trigger upkeep
@@ -188,50 +171,20 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, Pausable, IC
         }
     }
 
-    /// @notice Helper function to decode checkData configuration
-    /// @param checkData Encoded configuration data
-    /// @return minBatchSize Minimum batch size required
-    /// @return maxPriceAge Maximum price staleness allowed
-    function decodeCheckData(bytes calldata checkData) 
-        external 
-        pure 
-        returns (uint256 minBatchSize, uint256 maxPriceAge) 
-    {
-        (minBatchSize, maxPriceAge) = abi.decode(checkData, (uint256, uint256));
-    }
 
     /// @notice Perform upkeep (Chainlink Automation)
     /// @param performData Data from checkUpkeep
-    function performUpkeep(bytes calldata performData) external override whenNotPaused {
+    function performUpkeep(bytes calldata performData) external override {
         if (!automationEnabled) revert AutomationNotEnabled();
         
-        // Decode perform data (includes optional minBatchSize)
-        uint256 batchId;
-        uint256[] memory intentIds;
-        uint256 minBatchSize;
+        // Decode perform data - simplified format
+        uint256 batchId = abi.decode(performData, (uint256));
         
-        try this.decodePerformData(performData) returns (
-            uint256 _batchId, 
-            uint256[] memory _intentIds, 
-            uint256 _minBatchSize
-        ) {
-            batchId = _batchId;
-            intentIds = _intentIds;
-            minBatchSize = _minBatchSize;
-        } catch {
-            // Fallback to old format for backward compatibility
-            (batchId, intentIds) = abi.decode(performData, (uint256, uint256[]));
-            minBatchSize = 5; // Default
-        }
+        // Get ready batch data from IntentCollector
+        (uint256 currentBatchId, uint256[] memory intentIds) = intentCollector.getReadyBatch();
         
-        // Verify batch is still ready and meets minimum size requirement
-        (bool isReady, uint256 currentBatchId,) = intentCollector.checkBatchReady();
-        if (!isReady || currentBatchId != batchId || batchId <= lastProcessedBatch) {
-            revert BatchNotReady();
-        }
-        
-        // Additional check for minimum batch size (from checkData configuration)
-        if (intentIds.length < minBatchSize) {
+        // Verify batch ID matches and hasn't been processed
+        if (currentBatchId != batchId || batchId <= lastProcessedBatch) {
             revert BatchNotReady();
         }
         
@@ -241,25 +194,15 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, Pausable, IC
         _processBatch(batchId, intentIds);
     }
 
-    /// @notice Helper function to decode performData
-    /// @param performData Encoded perform data
-    /// @return batchId Batch ID to process
-    /// @return intentIds Array of intent IDs
-    /// @return minBatchSize Minimum batch size requirement
-    function decodePerformData(bytes calldata performData) 
-        external 
-        pure 
-        returns (uint256 batchId, uint256[] memory intentIds, uint256 minBatchSize) 
-    {
-        (batchId, intentIds, minBatchSize) = abi.decode(performData, (uint256, uint256[], uint256));
-    }
 
     /// @notice Manual trigger for batch processing (owner only, for testing)
     /// @param batchId The batch ID to process
-    function manualTriggerBatch(uint256 batchId) external onlyOwner whenNotPaused {
-        // Get batch intents
-        uint256[] memory intentIds = intentCollector.getBatchIntents(batchId);
-        if (intentIds.length == 0) revert BatchNotReady();
+    function manualTriggerBatch(uint256 batchId) external onlyOwner {
+        // Get ready batch data
+        (uint256 currentBatchId, uint256[] memory intentIds) = intentCollector.getReadyBatch();
+        
+        // Verify batch ID matches
+        if (currentBatchId != batchId) revert BatchNotReady();
         
         emit AutomationTriggered(batchId, "Manual Trigger");
         
@@ -320,7 +263,7 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, Pausable, IC
         
         if (ethReceived > 0) {
             // Distribute ETH proportionally to valid intents
-            _distributeTokens(validIntentIds, totalAmount, ethReceived, batchId);
+            _distributeTokens(validIntentIds, ethReceived, batchId);
             
             // Mark batch as successful
             _finalizeBatch(
@@ -363,16 +306,10 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, Pausable, IC
         // Convert current price to euint64 for FHE comparison
         euint64 currentPriceEncrypted = FHE.asEuint64(uint64(currentPrice));
         
-        // Only process intents from ACTIVE users
+        // Process intents from ACTIVE users (already filtered by filterActiveIntents)
         for (uint256 i = 0; i < activeIntentIds.length; i++) {
             uint256 intentId = activeIntentIds[i];
             IntentCollector.EncryptedIntent memory intent = intentCollector.getIntent(intentId);
-            
-            // Skip if user is not ACTIVE (double-check)
-            IntentCollector.UserState userState = intentCollector.getUserState(intent.user);
-            if (userState != IntentCollector.UserState.ACTIVE) {
-                continue;
-            }
             
             // Check if intent should execute based on encrypted price conditions
             ebool shouldExecute = _shouldExecuteIntent(intent, currentPriceEncrypted);
@@ -503,12 +440,10 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, Pausable, IC
 
     /// @notice Distribute ETH tokens to valid intent holders
     /// @param validIntentIds Array of valid intent IDs
-    /// @param totalEncryptedAmount Total encrypted amount for proportion calculation
     /// @param ethReceived Total ETH received from swap
     /// @param batchId Batch ID for tracking
     function _distributeTokens(
         uint256[] memory validIntentIds,
-        euint64 totalEncryptedAmount,
         uint256 ethReceived,
         uint256 batchId
     ) internal {
@@ -630,15 +565,6 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, Pausable, IC
         fundPool = IFundPool(_fundPool);
     }
     
-    /// @notice Pause contract operations
-    function pause() external onlyOwner {
-        _pause();
-    }
-
-    /// @notice Unpause contract operations
-    function unpause() external onlyOwner {
-        _unpause();
-    }
 
     /// @notice Emergency withdraw function
     /// @param token Token address (address(0) for ETH)
