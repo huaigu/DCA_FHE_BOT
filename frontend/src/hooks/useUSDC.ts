@@ -90,7 +90,7 @@ export function useUSDC() {
     contract,
     "allowance",
     address && SEPOLIA_CONTRACTS.FUND_POOL ? [address, SEPOLIA_CONTRACTS.FUND_POOL] : [],
-    false, // temporarily disabled to fix call error
+    true, // re-enabled after fixing contract usage
   );
 
   // Token info state with fallback values

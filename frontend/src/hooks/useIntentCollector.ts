@@ -1,10 +1,10 @@
-import { useState, useCallback } from 'react';
-import { ethers } from 'ethers';
-import { useContract, useContractRead, useContractWrite } from './useContract';
-import { useWalletStore } from '@/lib/store';
-import { SEPOLIA_CONTRACTS } from '@/config/contracts';
-import { encryptDCAIntent } from '@/utils/fheEncryption';
-import IntentCollectorABI from '@/config/abis/IntentCollector.json';
+import { useState, useCallback } from "react";
+import { ethers } from "ethers";
+import { useContract, useContractRead, useContractWrite } from "./useContract";
+import { useWalletStore } from "@/lib/store";
+import { SEPOLIA_CONTRACTS } from "@/config/contracts";
+import { encryptDCAIntent } from "@/utils/fheEncryption";
+import IntentCollectorABI from "@/config/abis/IntentCollector.json";
 
 export interface DCAIntent {
   budget: bigint;
@@ -50,153 +50,127 @@ export function useIntentCollector() {
   const contract = useContract(
     SEPOLIA_CONTRACTS.INTENT_COLLECTOR,
     IntentCollectorABI,
-    true // with signer for write operations
+    true, // with signer for write operations
   );
-
   // Get user's intents
   const {
     data: userIntentIds,
     isLoading: isUserIntentsLoading,
-    refetch: refetchUserIntents
-  } = useContractRead<bigint[]>(
-    contract,
-    'getUserIntents',
-    address ? [address] : [],
-    !!address
-  );
+    refetch: refetchUserIntents,
+  } = useContractRead<bigint[]>(contract, "getUserIntents", address ? [address] : [], !!address);
 
   // Get batch status
   const {
     data: batchStatus,
     isLoading: isBatchStatusLoading,
-    refetch: refetchBatchStatus
-  } = useContractRead<[boolean, bigint]>(
-    contract,
-    'checkBatchReady',
-    [],
-    true
-  );
+    refetch: refetchBatchStatus,
+  } = useContractRead<[boolean, bigint]>(contract, "checkBatchReady", [], true);
 
   // Get ready batch details (includes intent IDs)
   const {
     data: readyBatchData,
     isLoading: isReadyBatchLoading,
-    refetch: refetchReadyBatch
+    refetch: refetchReadyBatch,
   } = useContractRead<[bigint, bigint[]]>(
     contract,
-    'getReadyBatch',
+    "getReadyBatch",
     [],
-    true
+    true, // re-enabled - function has no parameters as confirmed in contract
   );
 
   // Get batch statistics
   const {
     data: batchStatsData,
     isLoading: isBatchStatsLoading,
-    refetch: refetchBatchStats
-  } = useContractRead<[bigint, bigint, bigint]>(
-    contract,
-    'getBatchStats',
-    [],
-    true
-  );
+    refetch: refetchBatchStats,
+  } = useContractRead<[bigint, bigint, bigint]>(contract, "getBatchStats", [], true);
 
   // Contract write function
-  const { writeAsync: submitIntentAsync } = useContractWrite(contract, 'submitIntent');
+  const { writeAsync: submitIntentAsync } = useContractWrite(contract, "submitIntent");
 
   /**
    * Submit a new DCA intent
    */
-  const submitIntent = useCallback(async (
-    params: DCAIntentParams,
-    contractAddress: string,
-    userAddress: string
-  ) => {
-    setIsLoading(true);
-    setError(null);
+  const submitIntent = useCallback(
+    async (params: DCAIntentParams, contractAddress: string, userAddress: string) => {
+      setIsLoading(true);
+      setError(null);
 
-    try {
-      // Encrypt all DCA parameters
-      const encryptedParams = await encryptDCAIntent(
-        params,
-        contractAddress,
-        userAddress
-      );
+      try {
+        // Encrypt all DCA parameters
+        const encryptedParams = await encryptDCAIntent(params, contractAddress, userAddress);
 
-      // Submit intent with all encrypted parameters
-      const tx = await submitIntentAsync([
-        encryptedParams.budget.encryptedData,
-        encryptedParams.budget.proof,
-        encryptedParams.tradesCount.encryptedData,
-        encryptedParams.tradesCount.proof,
-        encryptedParams.amountPerTrade.encryptedData,
-        encryptedParams.amountPerTrade.proof,
-        encryptedParams.frequency.encryptedData,
-        encryptedParams.frequency.proof,
-        encryptedParams.minPrice.encryptedData,
-        encryptedParams.minPrice.proof,
-        encryptedParams.maxPrice.encryptedData,
-        encryptedParams.maxPrice.proof
-      ]);
+        // Submit intent with all encrypted parameters
+        const tx = await submitIntentAsync([
+          encryptedParams.budget.encryptedData,
+          encryptedParams.budget.proof,
+          encryptedParams.tradesCount.encryptedData,
+          encryptedParams.tradesCount.proof,
+          encryptedParams.amountPerTrade.encryptedData,
+          encryptedParams.amountPerTrade.proof,
+          encryptedParams.frequency.encryptedData,
+          encryptedParams.frequency.proof,
+          encryptedParams.minPrice.encryptedData,
+          encryptedParams.minPrice.proof,
+          encryptedParams.maxPrice.encryptedData,
+          encryptedParams.maxPrice.proof,
+        ]);
 
-      // Wait for transaction confirmation
-      const receipt = await tx.wait();
-      
-      // Extract intent ID from events
-      const intentSubmittedEvent = receipt.logs.find(
-        (log: any) => log.fragment?.name === 'IntentSubmitted'
-      );
-      
-      const intentId = intentSubmittedEvent ? 
-        intentSubmittedEvent.args[0] : null;
+        // Wait for transaction confirmation
+        const receipt = await tx.wait();
 
-      // Refresh data
-      await Promise.all([
-        refetchUserIntents(),
-        refetchBatchStatus(),
-        refetchReadyBatch(),
-        refetchBatchStats()
-      ]);
+        // Extract intent ID from events
+        const intentSubmittedEvent = receipt.logs.find((log: any) => log.fragment?.name === "IntentSubmitted");
 
-      return {
-        receipt,
-        intentId
-      };
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Intent submission failed';
-      setError(errorMessage);
-      throw new Error(errorMessage);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [submitIntentAsync, refetchUserIntents, refetchBatchStatus, refetchReadyBatch, refetchBatchStats]);
+        const intentId = intentSubmittedEvent ? intentSubmittedEvent.args[0] : null;
+
+        // Refresh data
+        await Promise.all([refetchUserIntents(), refetchBatchStatus(), refetchReadyBatch(), refetchBatchStats()]);
+
+        return {
+          receipt,
+          intentId,
+        };
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : "Intent submission failed";
+        setError(errorMessage);
+        throw new Error(errorMessage);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [submitIntentAsync, refetchUserIntents, refetchBatchStatus, refetchReadyBatch, refetchBatchStats],
+  );
 
   /**
    * Get intent details by ID
    */
-  const getIntent = useCallback(async (intentId: bigint): Promise<DCAIntent | null> => {
-    if (!contract) return null;
+  const getIntent = useCallback(
+    async (intentId: bigint): Promise<DCAIntent | null> => {
+      if (!contract) return null;
 
-    try {
-      const intentData = await contract.getIntent(intentId);
-      return {
-        budget: intentData[0],
-        tradesCount: Number(intentData[1]),
-        amountPerTrade: intentData[2],
-        frequency: Number(intentData[3]),
-        minPrice: intentData[4],
-        maxPrice: intentData[5],
-        user: intentData[6],
-        submittedAt: intentData[7],
-        batchId: intentData[8],
-        isActive: intentData[9],
-        isProcessed: intentData[10]
-      };
-    } catch (err) {
-      console.error('Failed to fetch intent:', err);
-      return null;
-    }
-  }, [contract]);
+      try {
+        const intentData = await contract.getIntent(intentId);
+        return {
+          budget: intentData[0],
+          tradesCount: Number(intentData[1]),
+          amountPerTrade: intentData[2],
+          frequency: Number(intentData[3]),
+          minPrice: intentData[4],
+          maxPrice: intentData[5],
+          user: intentData[6],
+          submittedAt: intentData[7],
+          batchId: intentData[8],
+          isActive: intentData[9],
+          isProcessed: intentData[10],
+        };
+      } catch (err) {
+        console.error("Failed to fetch intent:", err);
+        return null;
+      }
+    },
+    [contract],
+  );
 
   /**
    * Get formatted batch status
@@ -206,17 +180,18 @@ export function useIntentCollector() {
       return {
         isReady: false,
         batchId: BigInt(0),
-        intentIds: []
+        intentIds: [],
       };
     }
 
-    // Get intent IDs from readyBatchData if batch is ready
+    // Get intent IDs from readyBatchData if batch is ready and data is available
+    // If readyBatchData is unavailable due to contract issues, return empty array
     const intentIds = batchStatus[0] && readyBatchData ? readyBatchData[1] : [];
 
     return {
       isReady: batchStatus[0],
       batchId: batchStatus[1],
-      intentIds: intentIds
+      intentIds: intentIds,
     };
   };
 
@@ -228,14 +203,14 @@ export function useIntentCollector() {
       return {
         currentBatch: BigInt(0),
         pendingCount: BigInt(0),
-        timeRemaining: BigInt(0)
+        timeRemaining: BigInt(0),
       };
     }
 
     return {
       currentBatch: batchStatsData[0],
       pendingCount: batchStatsData[1],
-      timeRemaining: batchStatsData[2]
+      timeRemaining: batchStatsData[2],
     };
   };
 
@@ -244,29 +219,29 @@ export function useIntentCollector() {
    */
   const calculateStrategy = useCallback((params: DCAIntentParams) => {
     const { budget, tradesCount, amountPerTrade } = params;
-    
+
     // Auto-calculate amount per trade if not provided
     const finalAmountPerTrade = amountPerTrade || budget / BigInt(tradesCount);
-    
+
     // Calculate total duration
     const totalDuration = tradesCount * params.frequency;
-    
+
     return {
       amountPerTrade: finalAmountPerTrade,
       totalDuration,
-      totalCost: finalAmountPerTrade * BigInt(tradesCount)
+      totalCost: finalAmountPerTrade * BigInt(tradesCount),
     };
   }, []);
 
   return {
     // Contract state
     contract,
-    
+
     // Data
     userIntentIds: userIntentIds || [],
     currentBatchStatus: getCurrentBatchStatus(),
     batchStats: getBatchStats(),
-    
+
     // Loading states
     isLoading,
     isUserIntentsLoading,
@@ -274,19 +249,19 @@ export function useIntentCollector() {
     isReadyBatchLoading,
     isBatchStatsLoading,
     error,
-    
+
     // Actions
     submitIntent,
     getIntent,
     calculateStrategy,
-    
+
     // Refresh functions
     refetchUserIntents,
     refetchBatchStatus,
     refetchReadyBatch,
     refetchBatchStats,
-    
+
     // Contract availability
-    isReady: !!contract && !!address
+    isReady: !!contract && !!address,
   };
 }
