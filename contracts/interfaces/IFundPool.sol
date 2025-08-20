@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {euint64, externalEuint64} from "@fhevm/solidity/lib/FHE.sol";
+import {euint64} from "@fhevm/solidity/lib/FHE.sol";
 
 /// @title IFundPool
 /// @notice Interface for the FundPool contract that manages encrypted user balances
 interface IFundPool {
     /// @notice Deposit USDC and record encrypted balance
-    /// @param amountExt Encrypted amount to deposit
-    /// @param amountProof Proof for the encrypted amount
-    /// @param plaintextAmount The plaintext amount for USDC transfer (temporary solution for testing)
-    function deposit(externalEuint64 amountExt, bytes calldata amountProof, uint256 plaintextAmount) external;
+    /// @param amount The amount of USDC to deposit
+    function deposit(uint256 amount) external;
     
     /// @notice Withdraw USDC from encrypted balance
     /// @param amount Plain amount to withdraw (must match encrypted balance)

@@ -5,8 +5,6 @@ import {
   TestBatchProcessor__factory,
   IntentCollector,
   IntentCollector__factory,
-  ConfidentialToken,
-  ConfidentialToken__factory,
   TestFundPool,
   TestFundPool__factory,
 } from "../types";
@@ -53,7 +51,6 @@ describe("BatchProcessor", function () {
   let signers: Signers;
   let batchProcessor: TestBatchProcessor;
   let intentCollector: IntentCollector;
-  let confidentialToken: ConfidentialToken;
   let fundPool: TestFundPool;
   let mockPriceFeed: any;
   let mockRouter: any;
@@ -93,18 +90,8 @@ describe("BatchProcessor", function () {
     const intentCollectorFactory = (await ethers.getContractFactory("IntentCollector")) as IntentCollector__factory;
     intentCollector = (await intentCollectorFactory.deploy(signers.deployer.address)) as IntentCollector;
 
-    // Deploy ConfidentialToken
-    const confidentialTokenFactory = (await ethers.getContractFactory(
-      "ConfidentialToken",
-    )) as ConfidentialToken__factory;
-    confidentialToken = (await confidentialTokenFactory.deploy(
-      "Confidential ETH",
-      "cETH",
-      18,
-      await mockWETH.getAddress(),
-      signers.deployer.address,
-    )) as ConfidentialToken;
-
+    // Skip ConfidentialToken deployment (deprecated)
+    
     // Deploy FundPool
     const fundPoolFactory = (await ethers.getContractFactory("TestFundPool")) as TestFundPool__factory;
     fundPool = (await fundPoolFactory.deploy(await mockUSDC.getAddress(), signers.deployer.address)) as TestFundPool;
@@ -127,7 +114,7 @@ describe("BatchProcessor", function () {
     await intentCollector.setFundPool(await fundPool.getAddress());
     await fundPool.setIntentCollector(await intentCollector.getAddress());
     await fundPool.setBatchProcessor(batchProcessorAddress);
-    await confidentialToken.setBatchProcessor(batchProcessorAddress);
+    // Skip ConfidentialToken configuration (deprecated)
 
     // Set up test data and balances
     await setupTestData();

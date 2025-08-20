@@ -32,6 +32,7 @@ The system implements encrypted DCA strategies with dynamic price conditions:
 - **FHE Price Comparison**: Compare current ETH price (from Chainlink) against encrypted ranges using `FHE.gte()` and `FHE.lte()`
 - **Private Strategy Filtering**: Only execute intents when price conditions are met, maintaining privacy of individual strategies
 - **Batch Anonymity**: Observers cannot determine which users' strategies were executed in each batch
+- **Proportional Distribution**: Uses fixed-point arithmetic to achieve precise proportional distribution without FHE division (see [ProportionalDistribution.md](./docs/ProportionalDistribution.md))
 
 ### Development Stack
 - **Solidity**: v0.8.24 with Cancun EVM
@@ -229,16 +230,20 @@ function _filterAndAggregateIntents(uint256[] memory intentIds, uint256 currentP
 ```
 ├── contracts/
 │   ├── IntentCollector.sol          # Main intent collection and batch management
-│   ├── BatchProcessor.sol           # Core processing with FHE aggregation and price filtering
-│   ├── ConfidentialToken.sol        # Encrypted ERC20 token with FHE balances
+│   ├── BatchProcessor.sol           # Core processing with FHE aggregation, price filtering, and proportional distribution
+│   ├── ConfidentialToken.sol        # (Deprecated) Previously used for encrypted token distribution
+│   ├── FundPool.sol                 # Manages user USDC deposits with simplified deposit function
 │   ├── interfaces/
 │   │   ├── IChainlinkAggregator.sol  # Chainlink price feed interface
 │   │   ├── IUniswapV3Router.sol      # Uniswap V3 router interface
-│   │   └── IChainlinkAutomation.sol  # Chainlink automation interface
+│   │   ├── IChainlinkAutomation.sol  # Chainlink automation interface
+│   │   ├── IDecryptionOracle.sol     # Zama decryption oracle interface
+│   │   └── IFundPool.sol             # FundPool interface (simplified)
 │   └── mocks/
 │       ├── MockPriceFeed.sol         # Mock Chainlink price feed for testing
 │       ├── MockUniswapRouter.sol     # Mock Uniswap V3 router for testing
-│       └── MockERC20.sol             # Mock USDC token for testing
+│       ├── MockERC20.sol             # Mock USDC token for testing
+│       └── MockDecryptionOracle.sol  # Mock decryption oracle for testing
 ├── deploy/
 │   └── deploy.ts                     # Comprehensive deployment script
 ├── tasks/
