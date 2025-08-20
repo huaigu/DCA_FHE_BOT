@@ -79,7 +79,7 @@ export function useUSDC() {
     if (contract && address) {
       void refetchBalance();
     }
-  }, [contract, address, refetchBalance]);
+  }, [contract, address]); // Removed refetchBalance from deps to prevent infinite loop
 
   // Get USDC allowance for FundPool with error handling
   const {
@@ -259,7 +259,7 @@ export function useUSDC() {
    */
   const parseAmount = useCallback(
     (value: string): bigint => {
-      const decimalsCount = tokenInfo.decimals;
+      const decimalsCount = typeof tokenInfo.decimals === "number" ? tokenInfo.decimals : 6;
 
       if (!value || value === "") return BigInt(0);
 

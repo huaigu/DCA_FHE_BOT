@@ -37,7 +37,7 @@ contract FundPool is IFundPool, SepoliaConfig, Ownable, ReentrancyGuard {
     IWithdrawalGateway public withdrawalGateway;
     
     /// @notice Encrypted user balances
-    mapping(address => euint64) private encryptedBalances;
+    mapping(address => euint64) internal encryptedBalances;
     
     /// @notice Track if user has initialized their encrypted balance
     mapping(address => bool) public isBalanceInitialized;
@@ -164,18 +164,9 @@ contract FundPool is IFundPool, SepoliaConfig, Ownable, ReentrancyGuard {
     }
     
     /// @notice Deposit USDC and record encrypted balance
-    /// @param amountExt Encrypted amount to deposit
-    /// @param amountProof Proof for the encrypted amount
-    /// @param plaintextAmount The plaintext amount for USDC transfer (temporary solution for testing)
-    function deposit(
-        externalEuint64 amountExt,
-        bytes calldata amountProof,
-        uint256 plaintextAmount
-    ) external override nonReentrant {
-        // Convert external encrypted amount to internal
-        euint64 encryptedAmount = FHE.fromExternal(amountExt, amountProof);
-        
-        if (plaintextAmount == 0) revert InvalidAmount();
+    /// @param amount The amount of USDC to deposit
+    function deposit(uint256 amount) external override nonReentrant {
+        if (amount == 0) revert InvalidAmount();
         
         // Initialize balance if needed
         if (!isBalanceInitialized[msg.sender]) {
@@ -183,8 +174,11 @@ contract FundPool is IFundPool, SepoliaConfig, Ownable, ReentrancyGuard {
         }
         
         // Transfer USDC from user to pool
-        bool success = usdcToken.transferFrom(msg.sender, address(this), plaintextAmount);
+        bool success = usdcToken.transferFrom(msg.sender, address(this), amount);
         if (!success) revert DepositFailed();
+        
+        // Convert plaintext amount to encrypted for internal balance tracking
+        euint64 encryptedAmount = FHE.asEuint64(uint64(amount));
         
         // Update encrypted balance
         euint64 currentBalance = encryptedBalances[msg.sender];
@@ -202,7 +196,7 @@ contract FundPool is IFundPool, SepoliaConfig, Ownable, ReentrancyGuard {
         }
         
         // Update totals
-        totalDeposited += plaintextAmount;
+        totalDeposited += amount;
         
         // Update user state to ACTIVE if they were WITHDRAWN or UNINITIALIZED
         if (intentCollector != address(0)) {
@@ -214,7 +208,7 @@ contract FundPool is IFundPool, SepoliaConfig, Ownable, ReentrancyGuard {
             }
         }
         
-        emit Deposit(msg.sender, plaintextAmount);
+        emit Deposit(msg.sender, amount);
     }
     
     /// @notice Initiate full withdrawal of all funds
@@ -365,12 +359,12 @@ contract FundPool is IFundPool, SepoliaConfig, Ownable, ReentrancyGuard {
     
     /// @notice Check if user can withdraw
     /// @param user User address
-    /// @return canWithdraw Whether user can initiate withdrawal
+    /// @return allowed Whether user can initiate withdrawal
     /// @return reason Reason if cannot withdraw
     function canWithdraw(address user) 
         external 
         view 
-        returns (bool canWithdraw, string memory reason) 
+        returns (bool allowed, string memory reason) 
     {
         if (!isBalanceInitialized[user]) {
             return (false, "Balance not initialized");
@@ -508,55 +502,11 @@ contract FundPool is IFundPool, SepoliaConfig, Ownable, ReentrancyGuard {
         return usdcToken.balanceOf(address(this));
     }
     
-    /// @notice Helper function to extract plaintext amount (simplified for development)
-    /// @dev In production, this would use ZK proofs or oracle-based verification
-    function _getPlaintextAmount(
-        externalEuint64 amountExt,
-        bytes calldata amountProof
-    ) internal pure returns (uint256) {
-        // For development, we'll encode the plaintext amount in the proof
-        // First 32 bytes of proof contain the plaintext amount
-        if (amountProof.length < 32) revert InvalidAmount();
-        
-        uint256 amount;
-        assembly {
-            amount := calldataload(add(amountProof.offset, 0))
-        }
-        
-        // Simplified: just ensure it's not zero and within reasonable bounds
-        if (amount == 0 || amount > 1e12) revert InvalidAmount(); // Max 1 million USDC (6 decimals)
-        
-        return amount;
-    }
-    
     /// @notice Emergency function to recover stuck tokens
     /// @param token The token to recover
     /// @param amount The amount to recover
     function recoverToken(address token, uint256 amount) external onlyOwner {
         if (token == address(0)) revert InvalidAddress();
         IERC20(token).transfer(owner(), amount);
-    }
-    
-    /// @notice Test function to initialize user balance (only for testing)
-    /// @dev This should only be used in test environments
-    function testInitializeBalance(address user, uint256 amount) external onlyOwner {
-        if (!isBalanceInitialized[user]) {
-            _initializeBalance(user);
-        }
-        
-        // Set balance directly for testing
-        euint64 encryptedAmount = FHE.asEuint64(uint64(amount));
-        encryptedBalances[user] = encryptedAmount;
-        
-        // Set permissions - ensure all relevant contracts have access
-        FHE.allowThis(encryptedAmount);
-        FHE.allow(encryptedAmount, user);
-        FHE.allow(encryptedAmount, address(this)); // Allow FundPool itself
-        if (batchProcessor != address(0)) {
-            FHE.allow(encryptedAmount, batchProcessor);
-        }
-        if (intentCollector != address(0)) {
-            FHE.allow(encryptedAmount, intentCollector);
-        }
     }
 }

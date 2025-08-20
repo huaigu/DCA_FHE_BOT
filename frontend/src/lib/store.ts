@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { BrowserProvider, JsonRpcSigner } from 'ethers'
+import { SEPOLIA_CONFIG } from '@/config/contracts'
 
 interface WalletState {
   isConnected: boolean
@@ -14,6 +15,7 @@ interface WalletState {
 interface WalletActions {
   connectWallet: () => Promise<void>
   disconnectWallet: () => void
+  switchToSepolia: () => Promise<void>
   clearError: () => void
 }
 
@@ -44,6 +46,46 @@ export const useWalletStore = create<WalletState & WalletActions>((set, get) => 
   error: null,
 
   // Actions
+  switchToSepolia: async () => {
+    try {
+      if (typeof window.ethereum === 'undefined') {
+        throw new Error('MetaMask is not installed')
+      }
+
+      // Try to switch to Sepolia
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: `0x${SEPOLIA_CONFIG.chainId.toString(16)}` }],
+        })
+      } catch (switchError: any) {
+        // If the chain doesn't exist, add it
+        if (switchError.code === 4902) {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [
+              {
+                chainId: `0x${SEPOLIA_CONFIG.chainId.toString(16)}`,
+                chainName: SEPOLIA_CONFIG.name,
+                rpcUrls: [SEPOLIA_CONFIG.rpcUrl],
+                blockExplorerUrls: [SEPOLIA_CONFIG.blockExplorer],
+                nativeCurrency: {
+                  name: 'Sepolia ETH',
+                  symbol: 'SepoliaETH',
+                  decimals: 18,
+                },
+              },
+            ],
+          })
+        } else {
+          throw switchError
+        }
+      }
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : 'Failed to switch to Sepolia')
+    }
+  },
+
   connectWallet: async () => {
     try {
       set({ isConnecting: true, error: null })
@@ -60,9 +102,20 @@ export const useWalletStore = create<WalletState & WalletActions>((set, get) => 
       const network = await provider.getNetwork()
       const chainId = Number(network.chainId)
 
-      // Check if on Sepolia testnet
-      if (chainId !== 11155111) {
-        throw new Error('Please switch to Sepolia testnet')
+      // Check if on Sepolia testnet, if not, auto-switch
+      if (chainId !== SEPOLIA_CONFIG.chainId) {
+        console.log(`Current chain: ${chainId}, switching to Sepolia (${SEPOLIA_CONFIG.chainId})...`)
+        await get().switchToSepolia()
+        
+        // Re-check the network after switching
+        const updatedNetwork = await provider.getNetwork()
+        const updatedChainId = Number(updatedNetwork.chainId)
+        
+        if (updatedChainId !== SEPOLIA_CONFIG.chainId) {
+          throw new Error('Failed to switch to Sepolia testnet')
+        }
+        
+        set({ chainId: updatedChainId })
       }
 
       set({
@@ -70,7 +123,7 @@ export const useWalletStore = create<WalletState & WalletActions>((set, get) => 
         address,
         provider,
         signer,
-        chainId,
+        chainId: chainId === SEPOLIA_CONFIG.chainId ? chainId : SEPOLIA_CONFIG.chainId,
         isConnecting: false,
         error: null,
       })

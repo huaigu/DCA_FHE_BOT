@@ -1,14 +1,14 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { ethers, fhevm } from "hardhat";
 import {
-  BatchProcessor,
-  BatchProcessor__factory,
+  TestBatchProcessor,
+  TestBatchProcessor__factory,
   IntentCollector,
   IntentCollector__factory,
   ConfidentialToken,
   ConfidentialToken__factory,
-  FundPool,
-  FundPool__factory,
+  TestFundPool,
+  TestFundPool__factory,
 } from "../types";
 import { expect } from "chai";
 import { FhevmType } from "@fhevm/hardhat-plugin";
@@ -51,10 +51,10 @@ const MockWETH = {
 
 describe("BatchProcessor", function () {
   let signers: Signers;
-  let batchProcessor: BatchProcessor;
+  let batchProcessor: TestBatchProcessor;
   let intentCollector: IntentCollector;
   let confidentialToken: ConfidentialToken;
-  let fundPool: FundPool;
+  let fundPool: TestFundPool;
   let mockPriceFeed: any;
   let mockRouter: any;
   let mockUSDC: any;
@@ -106,20 +106,19 @@ describe("BatchProcessor", function () {
     )) as ConfidentialToken;
 
     // Deploy FundPool
-    const fundPoolFactory = (await ethers.getContractFactory("FundPool")) as FundPool__factory;
-    fundPool = (await fundPoolFactory.deploy(await mockUSDC.getAddress(), signers.deployer.address)) as FundPool;
+    const fundPoolFactory = (await ethers.getContractFactory("TestFundPool")) as TestFundPool__factory;
+    fundPool = (await fundPoolFactory.deploy(await mockUSDC.getAddress(), signers.deployer.address)) as TestFundPool;
 
     // Deploy BatchProcessor
-    const batchProcessorFactory = (await ethers.getContractFactory("BatchProcessor")) as BatchProcessor__factory;
+    const batchProcessorFactory = (await ethers.getContractFactory("TestBatchProcessor")) as TestBatchProcessor__factory;
     batchProcessor = (await batchProcessorFactory.deploy(
       await intentCollector.getAddress(),
-      await confidentialToken.getAddress(),
       await mockPriceFeed.getAddress(),
       await mockRouter.getAddress(),
       await mockUSDC.getAddress(),
       await mockWETH.getAddress(),
       signers.deployer.address,
-    )) as BatchProcessor;
+    )) as TestBatchProcessor;
 
     batchProcessorAddress = await batchProcessor.getAddress();
 
@@ -167,7 +166,6 @@ describe("BatchProcessor", function () {
   describe("Deployment", function () {
     it("should initialize with correct parameters", async function () {
       expect(await batchProcessor.intentCollector()).to.equal(await intentCollector.getAddress());
-      expect(await batchProcessor.confidentialToken()).to.equal(await confidentialToken.getAddress());
       expect(await batchProcessor.priceFeed()).to.equal(await mockPriceFeed.getAddress());
       expect(await batchProcessor.uniswapRouter()).to.equal(await mockRouter.getAddress());
       expect(await batchProcessor.usdcToken()).to.equal(await mockUSDC.getAddress());
@@ -338,7 +336,7 @@ describe("BatchProcessor", function () {
       }
 
       // Manually trigger batch processing
-      return await batchProcessor.connect(signers.deployer).manualTriggerBatch(1);
+      return await batchProcessor.connect(signers.deployer).testManualTriggerBatch(1);
     }
 
     it("should allow owner to manually trigger batch processing", async function () {
@@ -374,7 +372,7 @@ describe("BatchProcessor", function () {
         await intentCollector.connect(signer).submitIntent(params);
       }
 
-      await expect(batchProcessor.connect(signers.deployer).manualTriggerBatch(1))
+      await expect(batchProcessor.connect(signers.deployer).testManualTriggerBatch(1))
         .to.emit(batchProcessor, "AutomationTriggered")
         .withArgs(1, "Manual Trigger");
     });
@@ -399,14 +397,14 @@ describe("BatchProcessor", function () {
         await intentCollector.connect(signer).submitIntent(params);
       }
 
-      await expect(batchProcessor.connect(signers.deployer).manualTriggerBatch(1)).to.emit(
+      await expect(batchProcessor.connect(signers.deployer).testManualTriggerBatch(1)).to.emit(
         batchProcessor,
         "BatchProcessed",
       );
     });
 
     it("should revert manual trigger from non-owner", async function () {
-      await expect(batchProcessor.connect(signers.alice).manualTriggerBatch(1)).to.be.revertedWithCustomError(
+      await expect(batchProcessor.connect(signers.alice).testManualTriggerBatch(1)).to.be.revertedWithCustomError(
         batchProcessor,
         "OwnableUnauthorizedAccount",
       );
@@ -447,7 +445,7 @@ describe("BatchProcessor", function () {
       }
 
       // Process batch
-      await batchProcessor.connect(signers.deployer).manualTriggerBatch(1);
+      await batchProcessor.connect(signers.deployer).testManualTriggerBatch(1);
 
       // Check batch result - should succeed but with 0 swapped amount
       const batchResult = await batchProcessor.getBatchResult(1);
@@ -547,7 +545,7 @@ describe("BatchProcessor", function () {
       }
 
       // Process batch
-      await batchProcessor.connect(signers.deployer).manualTriggerBatch(1);
+      await batchProcessor.connect(signers.deployer).testManualTriggerBatch(1);
 
       // Check batch result
       const batchResult = await batchProcessor.getBatchResult(1);
@@ -585,7 +583,7 @@ describe("BatchProcessor", function () {
       }
 
       // Process batch
-      await batchProcessor.connect(signers.deployer).manualTriggerBatch(1);
+      await batchProcessor.connect(signers.deployer).testManualTriggerBatch(1);
 
       // Check batch result
       const batchResult = await batchProcessor.getBatchResult(1);

@@ -2,13 +2,13 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { FhevmType } from "@fhevm/hardhat-plugin";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { FundPool, MockERC20, IntentCollector, BatchProcessor, MockWithdrawalGateway } from "../types";
+import { TestFundPool, MockERC20, IntentCollector, TestBatchProcessor, MockWithdrawalGateway } from "../types";
 
 describe("FundPool", function () {
-  let fundPool: FundPool;
+  let fundPool: TestFundPool;
   let mockUSDC: MockERC20;
   let intentCollector: IntentCollector;
-  let batchProcessor: BatchProcessor;
+  let batchProcessor: TestBatchProcessor;
   let mockGateway: MockWithdrawalGateway;
   let owner: HardhatEthersSigner;
   let user1: HardhatEthersSigner;
@@ -38,7 +38,7 @@ describe("FundPool", function () {
     await mockUSDC.waitForDeployment();
 
     // Deploy FundPool
-    const FundPoolFactory = await ethers.getContractFactory("FundPool");
+    const FundPoolFactory = await ethers.getContractFactory("TestFundPool");
     fundPool = await FundPoolFactory.deploy(
       await mockUSDC.getAddress(),
       owner.address
@@ -69,10 +69,9 @@ describe("FundPool", function () {
     const mockRouter = await MockUniswapRouterFactory.deploy();
     await mockRouter.waitForDeployment();
 
-    const BatchProcessorFactory = await ethers.getContractFactory("BatchProcessor");
+    const BatchProcessorFactory = await ethers.getContractFactory("TestBatchProcessor");
     batchProcessor = await BatchProcessorFactory.deploy(
       await intentCollector.getAddress(),
-      await confidentialToken.getAddress(),
       await mockPriceFeed.getAddress(),
       await mockRouter.getAddress(),
       await mockUSDC.getAddress(),
@@ -148,14 +147,8 @@ describe("FundPool", function () {
       // Approve USDC spending
       await mockUSDC.connect(user1).approve(await fundPool.getAddress(), depositAmount);
 
-      // Create encrypted amount
-      const fundPoolAddress = await fundPool.getAddress();
-      const input = await hre.fhevm.createEncryptedInput(fundPoolAddress, user1.address);
-      input.add64(BigInt(depositAmount));
-      const encryptedInput = await input.encrypt();
-
-      // Deposit
-      await fundPool.connect(user1).deposit(encryptedInput.handles[0], encryptedInput.inputProof, depositAmount);
+      // Deposit with simplified interface
+      await fundPool.connect(user1).deposit(depositAmount);
 
       // Check total deposited
       expect(await fundPool.totalDeposited()).to.equal(depositAmount);
@@ -174,19 +167,11 @@ describe("FundPool", function () {
 
       // First deposit
       await mockUSDC.connect(user1).approve(fundPoolAddress, deposit1);
-      const input1 = await hre.fhevm.createEncryptedInput(fundPoolAddress, user1.address);
-      input1.add64(BigInt(deposit1));
-      const encrypted1 = await input1.encrypt();
-      
-      await fundPool.connect(user1).deposit(encrypted1.handles[0], encrypted1.inputProof, deposit1);
+      await fundPool.connect(user1).deposit(deposit1);
 
       // Second deposit
       await mockUSDC.connect(user1).approve(fundPoolAddress, deposit2);
-      const input2 = await hre.fhevm.createEncryptedInput(fundPoolAddress, user1.address);
-      input2.add64(BigInt(deposit2));
-      const encrypted2 = await input2.encrypt();
-      
-      await fundPool.connect(user1).deposit(encrypted2.handles[0], encrypted2.inputProof, deposit2);
+      await fundPool.connect(user1).deposit(deposit2);
 
       // Check totals
       expect(await fundPool.totalDeposited()).to.equal(deposit1 + deposit2);
@@ -194,13 +179,8 @@ describe("FundPool", function () {
     });
 
     it("Should revert on zero amount deposit", async function () {
-      const fundPoolAddress = await fundPool.getAddress();
-      const input = await hre.fhevm.createEncryptedInput(fundPoolAddress, user1.address);
-      input.add64(0n);
-      const encryptedInput = await input.encrypt();
-
       await expect(
-        fundPool.connect(user1).deposit(encryptedInput.handles[0], encryptedInput.inputProof, 0)
+        fundPool.connect(user1).deposit(0)
       ).to.be.revertedWithCustomError(fundPool, "InvalidAmount");
     });
   });
@@ -212,12 +192,7 @@ describe("FundPool", function () {
       const fundPoolAddress = await fundPool.getAddress();
       
       await mockUSDC.connect(user1).approve(fundPoolAddress, depositAmount);
-      
-      const input = await hre.fhevm.createEncryptedInput(fundPoolAddress, user1.address);
-      input.add64(BigInt(depositAmount));
-      const encryptedInput = await input.encrypt();
-      
-      await fundPool.connect(user1).deposit(encryptedInput.handles[0], encryptedInput.inputProof, depositAmount);
+      await fundPool.connect(user1).deposit(depositAmount);
     });
 
     it("Should allow users to initiate withdrawal", async function () {
@@ -318,12 +293,7 @@ describe("FundPool", function () {
       const fundPoolAddress = await fundPool.getAddress();
       
       await mockUSDC.connect(user1).approve(fundPoolAddress, depositAmount);
-      
-      const input = await hre.fhevm.createEncryptedInput(fundPoolAddress, user1.address);
-      input.add64(BigInt(depositAmount));
-      const encryptedInput = await input.encrypt();
-      
-      await fundPool.connect(user1).deposit(encryptedInput.handles[0], encryptedInput.inputProof, depositAmount);
+      await fundPool.connect(user1).deposit(depositAmount);
     });
 
     it("Should support legacy withdraw function", async function () {
@@ -356,12 +326,7 @@ describe("FundPool", function () {
       const fundPoolAddress = await fundPool.getAddress();
       
       await mockUSDC.connect(user1).approve(fundPoolAddress, depositAmount);
-      
-      const input = await hre.fhevm.createEncryptedInput(fundPoolAddress, user1.address);
-      input.add64(BigInt(depositAmount));
-      const encryptedInput = await input.encrypt();
-      
-      await fundPool.connect(user1).deposit(encryptedInput.handles[0], encryptedInput.inputProof, depositAmount);
+      await fundPool.connect(user1).deposit(depositAmount);
 
       expect(await fundPool.isBalanceInitialized(user1.address)).to.be.true;
     });
@@ -378,12 +343,7 @@ describe("FundPool", function () {
       const fundPoolAddress = await fundPool.getAddress();
       
       await mockUSDC.connect(user1).approve(fundPoolAddress, depositAmount);
-      
-      const input = await hre.fhevm.createEncryptedInput(fundPoolAddress, user1.address);
-      input.add64(BigInt(depositAmount));
-      const encryptedInput = await input.encrypt();
-      
-      await fundPool.connect(user1).deposit(encryptedInput.handles[0], encryptedInput.inputProof, depositAmount);
+      await fundPool.connect(user1).deposit(depositAmount);
 
       // Deduct as BatchProcessor
       const deductAmount = ethers.parseUnits("200", 6);
@@ -410,12 +370,7 @@ describe("FundPool", function () {
       const fundPoolAddress = await fundPool.getAddress();
       
       await mockUSDC.connect(user1).approve(fundPoolAddress, depositAmount);
-      
-      const input = await hre.fhevm.createEncryptedInput(fundPoolAddress, user1.address);
-      input.add64(BigInt(depositAmount));
-      const encryptedInput = await input.encrypt();
-      
-      await fundPool.connect(user1).deposit(encryptedInput.handles[0], encryptedInput.inputProof, depositAmount);
+      await fundPool.connect(user1).deposit(depositAmount);
 
       // Try to transfer as non-BatchProcessor
       await expect(

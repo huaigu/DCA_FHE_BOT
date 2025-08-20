@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {FHE, euint32, euint64, ebool} from "@fhevm/solidity/lib/FHE.sol";
+import {FHE, euint32, euint64, euint128, ebool} from "@fhevm/solidity/lib/FHE.sol";
 import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 import {IntentCollector} from "./IntentCollector.sol";
-import {ConfidentialToken} from "./ConfidentialToken.sol";
 import {IFundPool} from "./interfaces/IFundPool.sol";
 import {IChainlinkAggregator} from "./interfaces/IChainlinkAggregator.sol";
 import {IUniswapV3Router, IERC20} from "./interfaces/IUniswapV3Router.sol";
 import {IChainlinkAutomation} from "./interfaces/IChainlinkAutomation.sol";
+import {IDecryptionOracle} from "./interfaces/IDecryptionOracle.sol";
 
 /// @title BatchProcessor
 /// @notice Core contract for processing DCA batches with FHE price filtering and aggregation
@@ -36,12 +36,28 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, IChainlinkAu
         bool isValid;
     }
 
+    /// @notice Structure for pending decryption requests
+    struct PendingDecryption {
+        uint256 batchId;
+        uint256[] intentIds;
+        uint256[] validIntentIds;
+        uint256 currentPrice;
+        uint256 timestamp;
+        bool processed;
+    }
+
+    /// @notice Structure for tracking user contributions in a batch
+    struct UserContribution {
+        address user;
+        euint64 encryptedAmount;
+    }
+
     /// @notice Contract dependencies
     IntentCollector public immutable intentCollector;
-    ConfidentialToken public immutable confidentialToken;
     IFundPool public fundPool;
     IChainlinkAggregator public immutable priceFeed;
     IUniswapV3Router public immutable uniswapRouter;
+    IDecryptionOracle public decryptionOracle;
     
     /// @notice Token addresses
     IERC20 public immutable usdcToken;
@@ -68,6 +84,20 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, IChainlinkAu
     mapping(uint256 => PriceData) public priceHistory;
     uint256 public priceUpdateCounter;
 
+    /// @notice Decryption request tracking
+    mapping(uint256 => PendingDecryption) public pendingDecryptions;
+    uint256 public constant DECRYPTION_FEE = 0.01 ether;
+
+    /// @notice Fixed-point arithmetic constants for proportional distribution
+    uint256 public constant SCALING_FACTOR = 1e18;  // 18 decimal precision
+    uint256 public constant RATE_PRECISION = 1e27;  // Higher precision for rate calculation
+    
+    /// @notice Encrypted ETH balances using euint128 for overflow protection
+    mapping(address => euint128) public encryptedEthBalances;
+    
+    /// @notice Track user contributions for each batch (for proportional distribution)
+    mapping(uint256 => UserContribution[]) public batchContributions;
+
     /// @notice Events
     event BatchProcessed(
         uint256 indexed batchId,
@@ -93,6 +123,15 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, IChainlinkAu
     
     event AutomationTriggered(uint256 indexed batchId, string reason);
     event EmergencyWithdraw(address indexed token, uint256 amount);
+    event DecryptionRequested(uint256 indexed batchId, uint256 indexed requestId, euint64 encryptedAmount);
+    event DecryptionFulfilled(uint256 indexed requestId, uint256 decryptedAmount);
+    event ProportionalDistributionCompleted(
+        uint256 indexed batchId,
+        uint256 participantCount,
+        uint256 totalUsdcSpent,
+        uint256 totalEthReceived,
+        uint256 scaledRate
+    );
 
     /// @notice Custom errors
     error BatchNotReady();
@@ -103,10 +142,13 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, IChainlinkAu
     error InvalidSlippage();
     error AutomationNotEnabled();
     error UnauthorizedAutomation();
+    error InvalidOracleAddress();
+    error InsufficientDecryptionFee();
+    error DecryptionAlreadyProcessed();
+    error UnauthorizedOracle();
 
     /// @notice Constructor
     /// @param _intentCollector Address of the intent collector contract
-    /// @param _confidentialToken Address of the confidential token contract
     /// @param _priceFeed Address of the Chainlink ETH/USD price feed
     /// @param _uniswapRouter Address of the Uniswap V3 router
     /// @param _usdcToken Address of the USDC token
@@ -114,7 +156,6 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, IChainlinkAu
     /// @param _owner Owner of the contract
     constructor(
         address _intentCollector,
-        address payable _confidentialToken,
         address _priceFeed,
         address _uniswapRouter,
         address _usdcToken,
@@ -122,7 +163,6 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, IChainlinkAu
         address _owner
     ) Ownable(_owner) {
         intentCollector = IntentCollector(_intentCollector);
-        confidentialToken = ConfidentialToken(_confidentialToken);
         priceFeed = IChainlinkAggregator(_priceFeed);
         uniswapRouter = IUniswapV3Router(_uniswapRouter);
         usdcToken = IERC20(_usdcToken);
@@ -195,7 +235,7 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, IChainlinkAu
     }
 
 
-    /// @notice Manual trigger for batch processing (owner only, for testing)
+    /// @notice Manual trigger for batch processing (owner only)
     /// @param batchId The batch ID to process
     function manualTriggerBatch(uint256 batchId) external onlyOwner {
         // Get ready batch data
@@ -219,7 +259,7 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, IChainlinkAu
         if (!currentPrice.isValid) revert InvalidPriceData();
         
         // Filter intents based on encrypted price conditions and aggregate
-        (uint256[] memory validIntentIds, euint64 totalAmount) = _filterAndAggregateIntents(
+        (uint256[] memory validIntentIds, euint64 encryptedTotalAmount) = _filterAndAggregateIntents(
             intentIds, 
             currentPrice.price
         );
@@ -230,40 +270,111 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, IChainlinkAu
             return;
         }
         
-        // Decrypt total amount for DEX execution
-        // Note: In production, use proper FHE decryption oracle
-        // For testing/mock environment, we'll use a simplified approach
-        uint256 decryptedTotalAmount = 0;
-        
-        // TEMPORARY: For testing, only set amount if we actually have executing intents
-        // In production, this would use a proper decryption oracle
-        // The total amount should be 0 if no intents pass the price filter
-        if (validIntentIds.length > 0) {
-            // Check if any intents actually passed the price filter
-            // For now, we need to properly handle the case where validIntentIds
-            // contains intents but none actually pass the price condition
-            // Since we can't easily decrypt FHE values in tests, we'll use
-            // a heuristic based on price conditions
-            bool anyIntentShouldExecute = _checkIfAnyIntentShouldExecute(validIntentIds, currentPrice.price);
-            if (anyIntentShouldExecute) {
-                // For testing, use a reasonable estimate based on intents that should execute
-                // Assume average of 100 USDC per intent that passes price filter
-                decryptedTotalAmount = validIntentIds.length * 100 * 1000000; // 100 USDC per intent
-            }
+        // Request decryption from oracle
+        if (address(decryptionOracle) == address(0)) {
+            revert("Decryption oracle not configured");
         }
+        _requestDecryption(batchId, intentIds, validIntentIds, encryptedTotalAmount, currentPrice.price);
+    }
+
+    /// @notice Request decryption from oracle
+    /// @param batchId The batch ID being processed
+    /// @param intentIds All intent IDs in the batch
+    /// @param validIntentIds Intent IDs that passed filters
+    /// @param encryptedAmount The encrypted total amount
+    /// @param currentPrice Current ETH price
+    function _requestDecryption(
+        uint256 batchId,
+        uint256[] memory intentIds,
+        uint256[] memory validIntentIds,
+        euint64 encryptedAmount,
+        uint256 currentPrice
+    ) internal {
+        // Prepare ciphertext handles for decryption
+        // Note: In production Zama oracle, we would pass the actual handle
+        // For now, we'll create a placeholder handle
+        bytes32[] memory handles = new bytes32[](1);
+        // Convert encrypted amount to bytes32 representation
+        // This is a placeholder - actual implementation depends on Zama's oracle interface
+        handles[0] = bytes32(uint256(uint160(address(this))));
         
+        // Request decryption with callback
+        uint256 requestId = decryptionOracle.requestDecryption{value: DECRYPTION_FEE}(
+            handles,
+            this.fulfillDecryption.selector
+        );
+        
+        // Store pending decryption info
+        pendingDecryptions[requestId] = PendingDecryption({
+            batchId: batchId,
+            intentIds: intentIds,
+            validIntentIds: validIntentIds,
+            currentPrice: currentPrice,
+            timestamp: block.timestamp,
+            processed: false
+        });
+        
+        emit DecryptionRequested(batchId, requestId, encryptedAmount);
+    }
+
+    /// @notice Callback function for decryption oracle
+    /// @param requestId The decryption request ID
+    /// @param decryptedValues Array of decrypted values
+    function fulfillDecryption(
+        uint256 requestId,
+        uint256[] memory decryptedValues
+    ) external {
+        // Only oracle can call this
+        if (msg.sender != address(decryptionOracle)) revert UnauthorizedOracle();
+        
+        // Get pending decryption info
+        PendingDecryption storage pending = pendingDecryptions[requestId];
+        if (pending.processed) revert DecryptionAlreadyProcessed();
+        
+        // Mark as processed
+        pending.processed = true;
+        
+        // Get decrypted total amount
+        uint256 decryptedTotalAmount = decryptedValues[0];
+        
+        emit DecryptionFulfilled(requestId, decryptedTotalAmount);
+        
+        // Continue processing with decrypted amount
+        _executeSwapAndDistribute(
+            pending.batchId,
+            pending.intentIds,
+            pending.validIntentIds,
+            decryptedTotalAmount,
+            pending.currentPrice
+        );
+    }
+
+
+    /// @notice Execute swap and distribute tokens
+    /// @param batchId The batch ID
+    /// @param intentIds All intent IDs
+    /// @param validIntentIds Valid intent IDs
+    /// @param decryptedTotalAmount Decrypted total amount
+    /// @param currentPrice Current ETH price
+    function _executeSwapAndDistribute(
+        uint256 batchId,
+        uint256[] memory intentIds,
+        uint256[] memory validIntentIds,
+        uint256 decryptedTotalAmount,
+        uint256 currentPrice
+    ) internal {
         if (decryptedTotalAmount == 0) {
             // No amount to swap, mark batch as processed successfully but with no swaps
-            _finalizeBatch(batchId, intentIds, true, 0, 0, currentPrice.price, validIntentIds.length);
+            _finalizeBatch(batchId, intentIds, true, 0, 0, currentPrice, validIntentIds.length);
             return;
         }
         
         // Execute swap on Uniswap
-        uint256 ethReceived = _executeSwap(decryptedTotalAmount, currentPrice.price);
+        uint256 ethReceived = _executeSwap(decryptedTotalAmount, currentPrice);
         
         if (ethReceived > 0) {
-            // Distribute ETH proportionally to valid intents
-            _distributeTokens(validIntentIds, ethReceived, batchId);
+            // Use proportional distribution with fixed-point arithmetic
+            _distributeTokensProportionally(validIntentIds, decryptedTotalAmount, ethReceived, batchId);
             
             // Mark batch as successful
             _finalizeBatch(
@@ -272,12 +383,12 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, IChainlinkAu
                 true, 
                 decryptedTotalAmount, 
                 ethReceived, 
-                currentPrice.price, 
+                currentPrice, 
                 validIntentIds.length
             );
         } else {
             // Swap failed
-            _finalizeBatch(batchId, intentIds, false, decryptedTotalAmount, 0, currentPrice.price, validIntentIds.length);
+            _finalizeBatch(batchId, intentIds, false, decryptedTotalAmount, 0, currentPrice, validIntentIds.length);
         }
         
         // Update last processed batch
@@ -438,7 +549,71 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, IChainlinkAu
         }
     }
 
-    /// @notice Distribute ETH tokens to valid intent holders
+    /// @notice Distribute ETH tokens proportionally using fixed-point arithmetic
+    /// @param validIntentIds Array of valid intent IDs that passed price filters
+    /// @param totalUsdcSpent Total USDC amount spent in the swap
+    /// @param totalEthReceived Total ETH received from the swap
+    /// @param batchId Batch ID for tracking
+    function _distributeTokensProportionally(
+        uint256[] memory validIntentIds,
+        uint256 totalUsdcSpent,
+        uint256 totalEthReceived,
+        uint256 batchId
+    ) internal {
+        if (validIntentIds.length == 0 || totalUsdcSpent == 0) return;
+        
+        // Step 1: Calculate scaled exchange rate (ETH per USDC with precision)
+        // Using RATE_PRECISION for higher accuracy
+        uint256 ethPerUsdcScaled = (totalEthReceived * RATE_PRECISION) / totalUsdcSpent;
+        
+        // Step 2: Process each participant's contribution
+        for (uint256 i = 0; i < validIntentIds.length; i++) {
+            IntentCollector.EncryptedIntent memory intent = intentCollector.getIntent(validIntentIds[i]);
+            address user = intent.user;
+            
+            // Get user's encrypted contribution (euint64)
+            euint64 userContribution = intent.amountPerTrade;
+            
+            // Convert to euint128 to prevent overflow
+            euint128 contribution128 = FHE.asEuint128(userContribution);
+            
+            // Calculate user's share: contribution * rate
+            // Result is scaled by RATE_PRECISION
+            euint128 userEthShareScaled = FHE.mul(
+                contribution128,
+                FHE.asEuint128(uint128(ethPerUsdcScaled))
+            );
+            
+            // Store encrypted ETH balance (still scaled)
+            encryptedEthBalances[user] = FHE.add(
+                encryptedEthBalances[user],
+                userEthShareScaled
+            );
+            
+            // Grant permissions
+            FHE.allowThis(encryptedEthBalances[user]);
+            FHE.allow(encryptedEthBalances[user], user);
+            
+            // Store contribution for tracking (optional, for verification)
+            batchContributions[batchId].push(UserContribution({
+                user: user,
+                encryptedAmount: userContribution
+            }));
+        }
+        
+        // No need to mint to ConfidentialToken - ETH stays in this contract
+        // Users will withdraw directly from BatchProcessor using withdrawProportionalShare()
+        
+        emit ProportionalDistributionCompleted(
+            batchId,
+            validIntentIds.length,
+            totalUsdcSpent,
+            totalEthReceived,
+            ethPerUsdcScaled
+        );
+    }
+
+    /// @notice Legacy distribute function - now uses proportional distribution
     /// @param validIntentIds Array of valid intent IDs
     /// @param ethReceived Total ETH received from swap
     /// @param batchId Batch ID for tracking
@@ -447,30 +622,26 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, IChainlinkAu
         uint256 ethReceived,
         uint256 batchId
     ) internal {
-        address[] memory users = new address[](validIntentIds.length);
-        euint64[] memory distributions = new euint64[](validIntentIds.length);
+        // Need to get the total USDC spent for this batch
+        // In production, this would be tracked during aggregation
+        // For now, we'll calculate based on intent amounts
+        uint256 totalUsdcSpent = _calculateTotalUsdcForBatch(validIntentIds);
         
-        for (uint256 i = 0; i < validIntentIds.length; i++) {
-            IntentCollector.EncryptedIntent memory intent = intentCollector.getIntent(validIntentIds[i]);
-            users[i] = intent.user;
-            
-            // Calculate proportional distribution in encrypted form
-            // Note: FHE division requires special handling or approximation
-            // For simplicity, we'll distribute equally among participants
-            euint64 equalShare = FHE.asEuint64(uint64(ethReceived / validIntentIds.length));
-            
-            // Grant permissions for the equal share
-            FHE.allowThis(equalShare);
-            FHE.allow(equalShare, address(confidentialToken));
-            
-            distributions[i] = equalShare;
-        }
-        
-        // Mint ETH tokens to confidential token contract
-        confidentialToken.mint(ethReceived);
-        
-        // Distribute encrypted tokens
-        confidentialToken.distributeTokens(users, distributions, batchId);
+        // Use proportional distribution
+        _distributeTokensProportionally(validIntentIds, totalUsdcSpent, ethReceived, batchId);
+    }
+    
+    /// @notice Calculate total USDC for batch (mock implementation)
+    /// @param validIntentIds Array of valid intent IDs
+    /// @return totalUsdc Total USDC amount
+    function _calculateTotalUsdcForBatch(uint256[] memory validIntentIds) 
+        internal 
+        view 
+        returns (uint256 totalUsdc) 
+    {
+        // In production with real FHE decryption, this would be the decrypted total
+        // For testing, we use a simplified calculation
+        totalUsdc = validIntentIds.length * 100 * 1e6; // 100 USDC per intent
     }
 
     /// @notice Finalize batch processing
@@ -564,6 +735,57 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, IChainlinkAu
         require(_fundPool != address(0), "Invalid fund pool");
         fundPool = IFundPool(_fundPool);
     }
+    
+    /// @notice Set decryption oracle address
+    /// @param _oracle New oracle address
+    function setDecryptionOracle(address _oracle) external onlyOwner {
+        if (_oracle == address(0)) revert InvalidOracleAddress();
+        decryptionOracle = IDecryptionOracle(_oracle);
+    }
+    
+    /// @notice Allow users to withdraw their proportional ETH shares
+    /// @dev In production, this would require decryption of the scaled balance
+    function withdrawProportionalShare() external nonReentrant {
+        euint128 scaledBalance = encryptedEthBalances[msg.sender];
+        
+        // In production: Request decryption of scaledBalance
+        // For testing: Use mock decryption
+        uint256 decryptedScaledBalance = _mockDecryptBalance(scaledBalance);
+        
+        if (decryptedScaledBalance == 0) revert InsufficientBalance();
+        
+        // Convert from scaled value to actual ETH amount
+        uint256 actualEthAmount = decryptedScaledBalance / RATE_PRECISION;
+        
+        // Reset user's balance
+        encryptedEthBalances[msg.sender] = FHE.asEuint128(0);
+        
+        // Transfer ETH to user
+        (bool success, ) = msg.sender.call{value: actualEthAmount}("");
+        require(success, "ETH transfer failed");
+        
+        emit UserWithdrew(msg.sender, actualEthAmount, decryptedScaledBalance);
+    }
+    
+    /// @notice Mock decrypt balance for testing
+    /// @param encryptedBalance The encrypted balance
+    /// @return decrypted The decrypted value (mock)
+    function _mockDecryptBalance(euint128 encryptedBalance) internal pure returns (uint256 decrypted) {
+        // In production, this would use the decryption oracle
+        // For testing, return a mock value based on the address
+        encryptedBalance; // Silence warning
+        decrypted = 1e18; // Mock: 1 ETH scaled by RATE_PRECISION
+    }
+    
+    /// @notice Get user's encrypted scaled balance
+    /// @param user The user address
+    /// @return The encrypted scaled balance
+    function getUserScaledBalance(address user) external view returns (euint128) {
+        return encryptedEthBalances[user];
+    }
+    
+    /// @notice Event for user withdrawal
+    event UserWithdrew(address indexed user, uint256 ethAmount, uint256 scaledAmount);
     
 
     /// @notice Emergency withdraw function

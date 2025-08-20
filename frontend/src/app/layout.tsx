@@ -16,7 +16,15 @@ export const metadata: Metadata = {
 
 declare global {
   interface Window {
-    ethereum?: any
+    ethereum?: {
+      request: (args: {
+        method: string
+        params?: any[]
+      }) => Promise<any>
+      isMetaMask?: boolean
+      on: (event: string, handler: (...args: any[]) => void) => void
+      removeListener: (event: string, handler: (...args: any[]) => void) => void
+    }
   }
 }
 

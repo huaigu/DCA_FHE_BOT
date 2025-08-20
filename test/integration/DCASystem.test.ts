@@ -1,14 +1,14 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { ethers, fhevm } from "hardhat";
 import { 
-  BatchProcessor, 
-  BatchProcessor__factory,
+  TestBatchProcessor, 
+  TestBatchProcessor__factory,
   IntentCollector,
   IntentCollector__factory,
   ConfidentialToken,
   ConfidentialToken__factory,
-  FundPool,
-  FundPool__factory
+  TestFundPool,
+  TestFundPool__factory
 } from "../../types";
 import { expect } from "chai";
 import { FhevmType } from "@fhevm/hardhat-plugin";
@@ -41,11 +41,11 @@ async function deploySystemFixture() {
   const wethAddress = await mockWETH.getAddress();
   
   // Deploy FundPool first
-  const fundPoolFactory = (await ethers.getContractFactory("FundPool")) as FundPool__factory;
+  const fundPoolFactory = (await ethers.getContractFactory("TestFundPool")) as TestFundPool__factory;
   const fundPool = (await fundPoolFactory.deploy(
     await mockUSDC.getAddress(),
     deployer.address
-  )) as FundPool;
+  )) as TestFundPool;
   
   // Deploy core contracts
   const intentCollectorFactory = (await ethers.getContractFactory("IntentCollector")) as IntentCollector__factory;
@@ -60,16 +60,15 @@ async function deploySystemFixture() {
     deployer.address
   )) as ConfidentialToken;
   
-  const batchProcessorFactory = (await ethers.getContractFactory("BatchProcessor")) as BatchProcessor__factory;
+  const batchProcessorFactory = (await ethers.getContractFactory("TestBatchProcessor")) as TestBatchProcessor__factory;
   const batchProcessor = (await batchProcessorFactory.deploy(
     await intentCollector.getAddress(),
-    await confidentialToken.getAddress(),
     await mockPriceFeed.getAddress(),
     await mockRouter.getAddress(),
     await mockUSDC.getAddress(),
     wethAddress,
     deployer.address
-  )) as BatchProcessor;
+  )) as TestBatchProcessor;
   
   // Set up contract permissions
   const batchProcessorAddress = await batchProcessor.getAddress();
@@ -339,7 +338,7 @@ describe("DCA System Integration", function () {
 
       // Process the batch manually
       try {
-        await batchProcessor.connect(signers.deployer).manualTriggerBatch(1);
+        await batchProcessor.connect(signers.deployer).testManualTriggerBatch(1);
       } catch (error) {
         console.log("Error processing batch:", error);
         throw error;
@@ -444,7 +443,7 @@ describe("DCA System Integration", function () {
       await confidentialToken.connect(signers.eve).initializeBalance();
 
       // Process the batch
-      await batchProcessor.connect(signers.deployer).manualTriggerBatch(1);
+      await batchProcessor.connect(signers.deployer).testManualTriggerBatch(1);
 
       // Verify batch was processed
       const batchResult = await batchProcessor.getBatchResult(1);
@@ -504,7 +503,7 @@ describe("DCA System Integration", function () {
       }
 
       // Process batch
-      await batchProcessor.connect(signers.deployer).manualTriggerBatch(1);
+      await batchProcessor.connect(signers.deployer).testManualTriggerBatch(1);
 
       // Verify batch was processed but unsuccessful
       const batchResult = await batchProcessor.getBatchResult(1);
@@ -529,7 +528,7 @@ describe("DCA System Integration", function () {
         );
       }
       
-      await batchProcessor.connect(signers.deployer).manualTriggerBatch(1);
+      await batchProcessor.connect(signers.deployer).testManualTriggerBatch(1);
       
       // Verify first batch
       expect(await batchProcessor.lastProcessedBatch()).to.equal(1);
@@ -549,7 +548,7 @@ describe("DCA System Integration", function () {
         );
       }
       
-      await batchProcessor.connect(signers.deployer).manualTriggerBatch(2);
+      await batchProcessor.connect(signers.deployer).testManualTriggerBatch(2);
       
       // Verify second batch
       expect(await batchProcessor.lastProcessedBatch()).to.equal(2);
@@ -590,12 +589,12 @@ describe("DCA System Integration", function () {
 
       // Manual trigger should fail when paused
       await expect(
-        batchProcessor.connect(signers.deployer).manualTriggerBatch(1)
+        batchProcessor.connect(signers.deployer).testManualTriggerBatch(1)
       ).to.be.revertedWithCustomError(batchProcessor, "EnforcedPause");
 
       // Unpause and process
       await batchProcessor.connect(signers.deployer).unpause();
-      await batchProcessor.connect(signers.deployer).manualTriggerBatch(1);
+      await batchProcessor.connect(signers.deployer).testManualTriggerBatch(1);
 
       // Verify processing worked after unpause
       const batchResult = await batchProcessor.getBatchResult(1);
@@ -629,7 +628,7 @@ describe("DCA System Integration", function () {
       }
 
       // Process batch
-      await batchProcessor.connect(signers.deployer).manualTriggerBatch(1);
+      await batchProcessor.connect(signers.deployer).testManualTriggerBatch(1);
 
       // Verify batch was processed
       const batchResult = await batchProcessor.getBatchResult(1);
@@ -670,7 +669,7 @@ describe("DCA System Integration", function () {
 
       // Manual trigger should still work but may revert due to invalid price
       await expect(
-        batchProcessor.connect(signers.deployer).manualTriggerBatch(1)
+        batchProcessor.connect(signers.deployer).testManualTriggerBatch(1)
       ).to.be.revertedWithCustomError(batchProcessor, "InvalidPriceData");
     });
   });
