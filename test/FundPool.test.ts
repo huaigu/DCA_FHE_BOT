@@ -50,16 +50,7 @@ describe("FundPool", function () {
     intentCollector = await IntentCollectorFactory.deploy(owner.address);
     await intentCollector.waitForDeployment();
 
-    // Deploy a mock BatchProcessor (simplified for testing)
-    const ConfidentialTokenFactory = await ethers.getContractFactory("ConfidentialToken");
-    const confidentialToken = await ConfidentialTokenFactory.deploy(
-      "Confidential ETH",
-      "cETH",
-      18,
-      ethers.ZeroAddress,
-      owner.address
-    );
-    await confidentialToken.waitForDeployment();
+    // Deploy TestBatchProcessor for testing
 
     const MockPriceFeedFactory = await ethers.getContractFactory("MockPriceFeed");
     const mockPriceFeed = await MockPriceFeedFactory.deploy();

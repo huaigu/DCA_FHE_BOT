@@ -34,12 +34,12 @@ DCA FHE Bot 系统实现了一个基于全同态加密(FHE)的隐私保护型定
 - **FHE集成**: 正确使用Zama FHEVM进行加密操作
 - **价格条件过滤**: 加密的价格范围比较功能正常
 - **Chainlink集成**: 价格预言机和自动化触发器工作正常
+- **比例分配**: 使用定点数算术实现精确比例分配（见 [ProportionalDistribution.md](./ProportionalDistribution.md)）
 
 #### ⚠️ 部分实现的功能
 
-- **FHE解密**: 使用硬编码测试值而非真实解密预言机
+- **FHE解密**: 已创建解密Oracle接口，生产环境需接入Zama服务
 - **零知识证明**: withdraw功能缺少真实的ZK证明验证
-- **比例分配**: 简化为平均分配而非真实比例计算
 
 #### ❌ 缺失的功能
 
@@ -53,7 +53,7 @@ DCA FHE Bot 系统实现了一个基于全同态加密(FHE)的隐私保护型定
 ### 2.1 🔴 高危漏洞
 
 #### H-1: FundPool提现缺少真实余额验证
-**位置**: `FundPool.sol:169-218`
+**位置**: `FundPool.sol:387-440`
 ```solidity
 function withdraw(uint256 amount, bytes calldata proof) external {
     // 生产环境中应验证proof与加密余额匹配
@@ -63,9 +63,10 @@ function withdraw(uint256 amount, bytes calldata proof) external {
 **影响**: 用户可能提取超过其实际余额的资金  
 **严重性**: 高  
 **建议**: 实施真正的零知识证明验证或使用可信执行环境
+**更新**: 已实现基于解密Oracle的全额提现机制（见 [WithdrawalMechanism.md](./WithdrawalMechanism.md)）
 
 #### H-2: 测试函数暴露在生产代码中
-**位置**: `FundPool.sol:320-339`
+**位置**: `FundPool.sol:542-561`
 ```solidity
 function testInitializeBalance(address user, uint256 amount) external onlyOwner {
     // 这应该只用于测试环境
@@ -76,7 +77,7 @@ function testInitializeBalance(address user, uint256 amount) external onlyOwner 
 **建议**: 在生产部署前移除或使用编译条件
 
 #### H-3: 缺少真实的FHE解密机制
-**位置**: `BatchProcessor.sol:229-237`
+**位置**: `BatchProcessor.sol:380`
 ```solidity
 // TEMPORARY: For testing, assume each valid intent contributes
 decryptedTotalAmount = validIntentIds.length * 100 * 1000000;
@@ -84,6 +85,7 @@ decryptedTotalAmount = validIntentIds.length * 100 * 1000000;
 **影响**: 实际交易金额与用户意图不匹配  
 **严重性**: 高  
 **建议**: 集成Zama的解密预言机或阈值解密网络
+**更新**: 已创建IDecryptionOracle接口和MockDecryptionOracle，生产环境需接入Zama服务
 
 ### 2.2 🟡 中危漏洞
 

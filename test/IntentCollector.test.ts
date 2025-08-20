@@ -1,6 +1,6 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { ethers, fhevm } from "hardhat";
-import { IntentCollector, IntentCollector__factory, FundPool, FundPool__factory, MockERC20, MockERC20__factory } from "../types";
+import { IntentCollector, IntentCollector__factory, TestFundPool, TestFundPool__factory, MockERC20, MockERC20__factory } from "../types";
 import { expect } from "chai";
 import { FhevmType } from "@fhevm/hardhat-plugin";
 
@@ -20,8 +20,8 @@ async function deployFixture() {
   const mockUSDC = (await mockUSDCFactory.deploy("USD Coin", "USDC", 6)) as MockERC20;
   
   // Deploy FundPool
-  const fundPoolFactory = (await ethers.getContractFactory("FundPool")) as FundPool__factory;
-  const fundPool = (await fundPoolFactory.deploy(await mockUSDC.getAddress(), deployer.address)) as FundPool;
+  const fundPoolFactory = (await ethers.getContractFactory("TestFundPool")) as TestFundPool__factory;
+  const fundPool = (await fundPoolFactory.deploy(await mockUSDC.getAddress(), deployer.address)) as TestFundPool;
   
   // Deploy IntentCollector
   const factory = (await ethers.getContractFactory("IntentCollector")) as IntentCollector__factory;
@@ -59,7 +59,7 @@ describe("IntentCollector", function () {
   let signers: Signers;
   let intentCollector: IntentCollector;
   let contractAddress: string;
-  let fundPool: FundPool;
+  let fundPool: TestFundPool;
   let mockUSDC: MockERC20;
 
   before(async function () {
