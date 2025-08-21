@@ -10,6 +10,7 @@ interface WalletState {
   chainId: number | null
   isConnecting: boolean
   error: string | null
+  isNetworkSwitching: boolean
 }
 
 interface WalletActions {
@@ -17,6 +18,9 @@ interface WalletActions {
   disconnectWallet: () => void
   switchToSepolia: () => Promise<void>
   clearError: () => void
+  handleNetworkChange: (chainId: string) => void
+  initializeNetworkListeners: () => void
+  removeNetworkListeners: () => void
 }
 
 interface DCAState {
@@ -44,10 +48,43 @@ export const useWalletStore = create<WalletState & WalletActions>((set, get) => 
   chainId: null,
   isConnecting: false,
   error: null,
+  isNetworkSwitching: false,
+
+  // Network event handlers
+  handleNetworkChange: (chainId: string) => {
+    const newChainId = parseInt(chainId, 16)
+    console.log('Network changed to:', newChainId)
+    
+    if (newChainId !== SEPOLIA_CONFIG.chainId) {
+      set({ 
+        error: `Please switch to Sepolia testnet (Chain ID: ${SEPOLIA_CONFIG.chainId})`,
+        chainId: newChainId
+      })
+    } else {
+      set({ 
+        error: null,
+        chainId: newChainId
+      })
+    }
+  },
+
+  initializeNetworkListeners: () => {
+    if (typeof window.ethereum !== 'undefined') {
+      window.ethereum.on('chainChanged', get().handleNetworkChange)
+    }
+  },
+
+  removeNetworkListeners: () => {
+    if (typeof window.ethereum !== 'undefined') {
+      window.ethereum.removeListener('chainChanged', get().handleNetworkChange)
+    }
+  },
 
   // Actions
   switchToSepolia: async () => {
     try {
+      set({ isNetworkSwitching: true })
+      
       if (typeof window.ethereum === 'undefined') {
         throw new Error('MetaMask is not installed')
       }
@@ -81,7 +118,10 @@ export const useWalletStore = create<WalletState & WalletActions>((set, get) => 
           throw switchError
         }
       }
+      
+      set({ isNetworkSwitching: false })
     } catch (error) {
+      set({ isNetworkSwitching: false })
       throw new Error(error instanceof Error ? error.message : 'Failed to switch to Sepolia')
     }
   },
@@ -94,36 +134,45 @@ export const useWalletStore = create<WalletState & WalletActions>((set, get) => 
         throw new Error('MetaMask is not installed')
       }
 
-      const provider = new BrowserProvider(window.ethereum)
-      await provider.send('eth_requestAccounts', [])
+      // Request account access
+      await window.ethereum.request({ method: 'eth_requestAccounts' })
       
-      const signer = await provider.getSigner()
-      const address = await signer.getAddress()
-      const network = await provider.getNetwork()
-      const chainId = Number(network.chainId)
+      // Create initial provider and check network
+      let provider = new BrowserProvider(window.ethereum)
+      let network = await provider.getNetwork()
+      let chainId = Number(network.chainId)
 
-      // Check if on Sepolia testnet, if not, auto-switch
+      // If not on Sepolia, switch networks and recreate provider
       if (chainId !== SEPOLIA_CONFIG.chainId) {
         console.log(`Current chain: ${chainId}, switching to Sepolia (${SEPOLIA_CONFIG.chainId})...`)
         await get().switchToSepolia()
         
-        // Re-check the network after switching
-        const updatedNetwork = await provider.getNetwork()
-        const updatedChainId = Number(updatedNetwork.chainId)
+        // Wait a bit for network switch to complete
+        await new Promise(resolve => setTimeout(resolve, 1000))
         
-        if (updatedChainId !== SEPOLIA_CONFIG.chainId) {
+        // Recreate provider after network switch
+        provider = new BrowserProvider(window.ethereum)
+        network = await provider.getNetwork()
+        chainId = Number(network.chainId)
+        
+        if (chainId !== SEPOLIA_CONFIG.chainId) {
           throw new Error('Failed to switch to Sepolia testnet')
         }
-        
-        set({ chainId: updatedChainId })
       }
+
+      // Get signer and address after confirming correct network
+      const signer = await provider.getSigner()
+      const address = await signer.getAddress()
+
+      // Initialize network listeners
+      get().initializeNetworkListeners()
 
       set({
         isConnected: true,
         address,
         provider,
         signer,
-        chainId: chainId === SEPOLIA_CONFIG.chainId ? chainId : SEPOLIA_CONFIG.chainId,
+        chainId,
         isConnecting: false,
         error: null,
       })
@@ -136,6 +185,9 @@ export const useWalletStore = create<WalletState & WalletActions>((set, get) => 
   },
 
   disconnectWallet: () => {
+    // Remove network listeners
+    get().removeNetworkListeners()
+    
     set({
       isConnected: false,
       address: null,

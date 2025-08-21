@@ -1,0 +1,5 @@
+// This test file has been deprecated as ConfidentialToken contract has been removed
+// The functionality has been moved to BatchProcessor contract with direct encrypted balance management
+// See BatchProcessor.test.ts for current test coverage of encrypted balance functionality
+
+console.log("ConfidentialToken.test.ts: Contract deprecated - functionality moved to BatchProcessor");

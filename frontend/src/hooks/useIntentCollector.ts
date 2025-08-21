@@ -100,21 +100,23 @@ export function useIntentCollector() {
         // Encrypt all DCA parameters
         const encryptedParams = await encryptDCAIntent(params, contractAddress, userAddress);
 
-        // Submit intent with all encrypted parameters
-        const tx = await submitIntentAsync([
-          encryptedParams.budget.encryptedData,
-          encryptedParams.budget.proof,
-          encryptedParams.tradesCount.encryptedData,
-          encryptedParams.tradesCount.proof,
-          encryptedParams.amountPerTrade.encryptedData,
-          encryptedParams.amountPerTrade.proof,
-          encryptedParams.frequency.encryptedData,
-          encryptedParams.frequency.proof,
-          encryptedParams.minPrice.encryptedData,
-          encryptedParams.minPrice.proof,
-          encryptedParams.maxPrice.encryptedData,
-          encryptedParams.maxPrice.proof,
-        ]);
+        // Submit intent with parameters as a struct
+        const submitIntentParams = {
+          budgetExt: encryptedParams.budget.encryptedData,
+          budgetProof: encryptedParams.budget.proof,
+          tradesCountExt: encryptedParams.tradesCount.encryptedData,
+          tradesCountProof: encryptedParams.tradesCount.proof,
+          amountPerTradeExt: encryptedParams.amountPerTrade.encryptedData,
+          amountPerTradeProof: encryptedParams.amountPerTrade.proof,
+          frequencyExt: encryptedParams.frequency.encryptedData,
+          frequencyProof: encryptedParams.frequency.proof,
+          minPriceExt: encryptedParams.minPrice.encryptedData,
+          minPriceProof: encryptedParams.minPrice.proof,
+          maxPriceExt: encryptedParams.maxPrice.encryptedData,
+          maxPriceProof: encryptedParams.maxPrice.proof,
+        };
+        
+        const tx = await submitIntentAsync([submitIntentParams]);
 
         // Wait for transaction confirmation
         const receipt = await tx.wait();

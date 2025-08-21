@@ -1,91 +1,79 @@
-import { BrowserProvider, JsonRpcSigner } from 'ethers'
+import { BrowserProvider, JsonRpcSigner } from "ethers";
 
 export interface EncryptedIntent {
-  budget: bigint
-  tradesCount: number
-  amountPerTrade: bigint
-  frequency: number
-  minPrice: bigint
-  maxPrice: bigint
+  budget: bigint;
+  tradesCount: number;
+  amountPerTrade: bigint;
+  frequency: number;
+  minPrice: bigint;
+  maxPrice: bigint;
 }
 
 export interface EncryptedInputProof {
-  handles: string[]
-  inputProof: string
+  handles: string[];
+  inputProof: string;
 }
 
 export interface DCAIntentParams {
-  budget: bigint
-  tradesCount: number
-  amountPerTrade: bigint
-  frequency: number
-  minPrice?: bigint
-  maxPrice?: bigint
+  budget: bigint;
+  tradesCount: number;
+  amountPerTrade: bigint;
+  frequency: number;
+  minPrice?: bigint;
+  maxPrice?: bigint;
 }
 
 export interface EncryptedDCAParams {
-  budget: { encryptedData: string; proof: string }
-  tradesCount: { encryptedData: string; proof: string }
-  amountPerTrade: { encryptedData: string; proof: string }
-  frequency: { encryptedData: string; proof: string }
-  minPrice: { encryptedData: string; proof: string }
-  maxPrice: { encryptedData: string; proof: string }
+  budget: { encryptedData: string; proof: string };
+  tradesCount: { encryptedData: string; proof: string };
+  amountPerTrade: { encryptedData: string; proof: string };
+  frequency: { encryptedData: string; proof: string };
+  minPrice: { encryptedData: string; proof: string };
+  maxPrice: { encryptedData: string; proof: string };
 }
 
 // FHE 实例管理
-let fhevmInstance: any = null
-let sdkInitialized = false
+let fhevmInstance: any = null;
+let sdkInitialized = false;
 
 /**
- * 初始化 FHEVM 实例 - 使用动态导入和错误处理
+ * 初始化 FHEVM 实例 - 按照官方文档正确初始化
  */
 export async function initializeFHE(): Promise<any> {
   try {
     if (!fhevmInstance) {
-      console.log('Initializing FHEVM using npm package...')
+      console.log("Initializing FHEVM using npm package...");
 
-      // 动态导入 SDK
-      console.log('Loading FHE SDK modules...')
-      const { initSDK, createInstance, SepoliaConfig } = await import('@zama-fhe/relayer-sdk/web')
-      console.log('FHE SDK modules loaded successfully')
+      // Step 1: 动态导入 SDK
+      console.log("Loading FHE SDK modules...");
+      const { initSDK, createInstance, SepoliaConfig } = await import("@zama-fhe/relayer-sdk/web");
+      console.log("FHE SDK modules loaded successfully");
 
-      // 初始化 SDK (加载 WASM)
+      // Step 2: 初始化 SDK (加载 WASM)
       if (!sdkInitialized) {
-        console.log('Loading TFHE WASM...')
-        if (typeof initSDK === 'function') {
-          await initSDK()
-          sdkInitialized = true
-          console.log('TFHE WASM loaded successfully')
-        } else {
-          throw new Error('initSDK function not available')
-        }
+        console.log("Loading TFHE WASM...");
+        await initSDK(); // 按照文档，直接调用，不需要检查函数类型
+        sdkInitialized = true;
+        console.log("TFHE WASM loaded successfully");
       }
 
-      // 创建实例配置
-      if (!SepoliaConfig) {
-        throw new Error('SepoliaConfig not available')
-      }
-
+      // Step 3: 创建实例
       const config = {
         ...SepoliaConfig,
-        network: (window as any).ethereum || "https://eth-sepolia.public.blastapi.io"
-      }
-      
-      console.log('Creating FHEVM instance with config:', config)
-      if (typeof createInstance === 'function') {
-        fhevmInstance = await createInstance(config)
-        console.log('FHEVM instance created successfully')
-      } else {
-        throw new Error('createInstance function not available')
-      }
+        network: (window as any).ethereum, // 按照文档，使用 window.ethereum
+      };
+
+      console.log("Creating FHEVM instance with config:", config);
+      fhevmInstance = await createInstance(config);
+      console.log("FHEVM instance created successfully");
     }
-    
-    return fhevmInstance
+
+    return fhevmInstance;
   } catch (error) {
-    console.error('Failed to initialize FHEVM:', error)
-    console.warn('FHE functionality will be disabled')
+    console.error("Failed to initialize FHEVM:", error);
+    console.warn("FHE functionality will be disabled");
     // 不抛出错误，而是返回 null，让应用继续运行
-    return null
+    return null;
   }
 }
 
@@ -94,16 +82,16 @@ export async function initializeFHE(): Promise<any> {
  */
 export async function getFhevmInstance(): Promise<any> {
   if (!fhevmInstance) {
-    await initializeFHE()
+    await initializeFHE();
   }
-  return fhevmInstance
+  return fhevmInstance;
 }
 
 /**
  * 检查 FHE 是否可用
  */
 export function isFHEAvailable(): boolean {
-  return fhevmInstance !== null
+  return fhevmInstance !== null;
 }
 
 /**
@@ -112,29 +100,29 @@ export function isFHEAvailable(): boolean {
 export async function encryptAmount(
   amount: bigint,
   contractAddress: string,
-  userAddress: string
+  userAddress: string,
 ): Promise<{ encryptedData: string; proof: string }> {
   try {
-    const fhevm = await getFhevmInstance()
-    
+    const fhevm = await getFhevmInstance();
+
     if (!fhevm) {
-      throw new Error('FHE not available - encryption failed')
+      throw new Error("FHE not available - encryption failed");
     }
-    
+
     // 创建加密输入
-    const encryptedInput = fhevm.createEncryptedInput(contractAddress, userAddress)
-    encryptedInput.add64(amount)
-    
+    const encryptedInput = fhevm.createEncryptedInput(contractAddress, userAddress);
+    encryptedInput.add64(amount);
+
     // 生成加密证明
-    const inputProof = encryptedInput.encrypt()
-    
+    const inputProof = encryptedInput.encrypt();
+
     return {
       encryptedData: inputProof.handles[0],
-      proof: inputProof.inputProof
-    }
+      proof: inputProof.inputProof,
+    };
   } catch (error) {
-    console.error('Failed to encrypt amount:', error)
-    throw new Error(`Amount encryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    console.error("Failed to encrypt amount:", error);
+    throw new Error(`Amount encryption failed: ${error instanceof Error ? error.message : "Unknown error"}`);
   }
 }
 
@@ -144,76 +132,76 @@ export async function encryptAmount(
 export async function encryptDCAIntent(
   params: DCAIntentParams,
   contractAddress: string,
-  userAddress: string
+  userAddress: string,
 ): Promise<EncryptedDCAParams> {
   try {
-    const fhevm = await getFhevmInstance()
-    
+    const fhevm = await getFhevmInstance();
+
     if (!fhevm) {
-      throw new Error('FHE not available - DCA intent encryption failed')
+      throw new Error("FHE not available - DCA intent encryption failed");
     }
-    
+
     // 为每个参数创建单独的加密输入
-    const encryptedParams: any = {}
-    
+    const encryptedParams: any = {};
+
     // 加密 budget (euint64)
-    let input = fhevm.createEncryptedInput(contractAddress, userAddress)
-    input.add64(params.budget)
-    let proof = input.encrypt()
+    let input = fhevm.createEncryptedInput(contractAddress, userAddress);
+    input.add64(params.budget);
+    let proof = input.encrypt();
     encryptedParams.budget = {
       encryptedData: proof.handles[0],
-      proof: proof.inputProof
-    }
-    
+      proof: proof.inputProof,
+    };
+
     // 加密 tradesCount (euint32)
-    input = fhevm.createEncryptedInput(contractAddress, userAddress)
-    input.add32(params.tradesCount)
-    proof = input.encrypt()
+    input = fhevm.createEncryptedInput(contractAddress, userAddress);
+    input.add32(params.tradesCount);
+    proof = input.encrypt();
     encryptedParams.tradesCount = {
       encryptedData: proof.handles[0],
-      proof: proof.inputProof
-    }
-    
+      proof: proof.inputProof,
+    };
+
     // 加密 amountPerTrade (euint64)
-    input = fhevm.createEncryptedInput(contractAddress, userAddress)
-    input.add64(params.amountPerTrade)
-    proof = input.encrypt()
+    input = fhevm.createEncryptedInput(contractAddress, userAddress);
+    input.add64(params.amountPerTrade);
+    proof = input.encrypt();
     encryptedParams.amountPerTrade = {
       encryptedData: proof.handles[0],
-      proof: proof.inputProof
-    }
-    
+      proof: proof.inputProof,
+    };
+
     // 加密 frequency (euint32)
-    input = fhevm.createEncryptedInput(contractAddress, userAddress)
-    input.add32(params.frequency)
-    proof = input.encrypt()
+    input = fhevm.createEncryptedInput(contractAddress, userAddress);
+    input.add32(params.frequency);
+    proof = input.encrypt();
     encryptedParams.frequency = {
       encryptedData: proof.handles[0],
-      proof: proof.inputProof
-    }
-    
+      proof: proof.inputProof,
+    };
+
     // 加密 minPrice (euint64) - 使用默认值 0 如果未提供
-    input = fhevm.createEncryptedInput(contractAddress, userAddress)
-    input.add64(params.minPrice || BigInt(0))
-    proof = input.encrypt()
+    input = fhevm.createEncryptedInput(contractAddress, userAddress);
+    input.add64(params.minPrice || BigInt(0));
+    proof = input.encrypt();
     encryptedParams.minPrice = {
       encryptedData: proof.handles[0],
-      proof: proof.inputProof
-    }
-    
+      proof: proof.inputProof,
+    };
+
     // 加密 maxPrice (euint64) - 使用最大值如果未提供
-    input = fhevm.createEncryptedInput(contractAddress, userAddress)
-    input.add64(params.maxPrice || BigInt(2**32 - 1))
-    proof = input.encrypt()
+    input = fhevm.createEncryptedInput(contractAddress, userAddress);
+    input.add64(params.maxPrice || BigInt(2 ** 32 - 1));
+    proof = input.encrypt();
     encryptedParams.maxPrice = {
       encryptedData: proof.handles[0],
-      proof: proof.inputProof
-    }
-    
-    return encryptedParams as EncryptedDCAParams
+      proof: proof.inputProof,
+    };
+
+    return encryptedParams as EncryptedDCAParams;
   } catch (error) {
-    console.error('Failed to encrypt DCA intent:', error)
-    throw new Error('DCA intent encryption failed')
+    console.error("Failed to encrypt DCA intent:", error);
+    throw new Error("DCA intent encryption failed");
   }
 }
 
@@ -223,11 +211,11 @@ export async function encryptDCAIntent(
 export async function decryptUserBalance(
   encryptedBalance: string,
   contractAddress: string,
-  signer: JsonRpcSigner
+  signer: JsonRpcSigner,
 ): Promise<bigint> {
   try {
-    const fhevm = await getFhevmInstance()
-    
+    const fhevm = await getFhevmInstance();
+
     // 使用 FhevmType.euint64 进行解密
     const FhevmType = {
       ebool: 0,
@@ -238,23 +226,18 @@ export async function decryptUserBalance(
       euint64: 5,
       euint128: 6,
       eaddress: 7,
-      euint256: 8
-    }
-    
+      euint256: 8,
+    };
+
     // 解密 euint64 类型的余额
-    const decryptedValue = await fhevm.decrypt(
-      FhevmType.euint64,
-      encryptedBalance,
-      contractAddress,
-      signer
-    )
-    
-    return BigInt(decryptedValue)
+    const decryptedValue = await fhevm.decrypt(FhevmType.euint64, encryptedBalance, contractAddress, signer);
+
+    return BigInt(decryptedValue);
   } catch (error) {
-    console.error('Failed to decrypt balance:', error)
-    console.warn('Balance decryption failed, this might be expected in development mode')
+    console.error("Failed to decrypt balance:", error);
+    console.warn("Balance decryption failed, this might be expected in development mode");
     // 在开发模式下返回模拟值
-    return BigInt(Math.floor(Math.random() * 1000000000))
+    return BigInt(Math.floor(Math.random() * 1000000000));
   }
 }
 
@@ -262,7 +245,7 @@ export async function decryptUserBalance(
  * 检查 FHE SDK 是否已初始化
  */
 export function isFHESDKLoaded(): boolean {
-  return sdkInitialized && fhevmInstance !== null
+  return sdkInitialized && fhevmInstance !== null;
 }
 
 /**
@@ -270,16 +253,16 @@ export function isFHESDKLoaded(): boolean {
  */
 export async function waitForFHESDK(timeout = 10000): Promise<void> {
   if (isFHESDKLoaded()) {
-    return
+    return;
   }
-  
-  const startTime = Date.now()
-  while (!isFHESDKLoaded() && (Date.now() - startTime) < timeout) {
-    await new Promise(resolve => setTimeout(resolve, 100))
+
+  const startTime = Date.now();
+  while (!isFHESDKLoaded() && Date.now() - startTime < timeout) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  
+
   if (!isFHESDKLoaded()) {
-    throw new Error('Timeout waiting for FHE SDK to initialize')
+    throw new Error("Timeout waiting for FHE SDK to initialize");
   }
 }
 
@@ -287,27 +270,27 @@ export async function waitForFHESDK(timeout = 10000): Promise<void> {
  * 重置 FHE 实例（用于测试或重新初始化）
  */
 export function resetFHEInstance(): void {
-  fhevmInstance = null
-  sdkInitialized = false
-  console.log('FHE instance reset')
+  fhevmInstance = null;
+  sdkInitialized = false;
+  console.log("FHE instance reset");
 }
 
 // 导出传统接口以保持兼容性
 export class FHEEncryption {
-  async initialize(provider: BrowserProvider): Promise<void> {
+  async initialize(_provider: BrowserProvider): Promise<void> {
     try {
-      await initializeFHE()
-      console.log('FHE encryption initialized with npm package')
+      await initializeFHE();
+      console.log("FHE encryption initialized with npm package");
     } catch (error) {
-      console.error('Failed to initialize FHE encryption:', error)
-      throw new Error('FHE initialization failed')
+      console.error("Failed to initialize FHE encryption:", error);
+      throw new Error("FHE initialization failed");
     }
   }
 
   async encryptIntent(
     intent: EncryptedIntent,
     contractAddress: string,
-    userAddress: string
+    userAddress: string,
   ): Promise<EncryptedInputProof> {
     const params = {
       budget: intent.budget,
@@ -315,11 +298,11 @@ export class FHEEncryption {
       amountPerTrade: intent.amountPerTrade,
       frequency: intent.frequency,
       minPrice: intent.minPrice,
-      maxPrice: intent.maxPrice
-    }
-    
-    const encrypted = await encryptDCAIntent(params, contractAddress, userAddress)
-    
+      maxPrice: intent.maxPrice,
+    };
+
+    const encrypted = await encryptDCAIntent(params, contractAddress, userAddress);
+
     return {
       handles: [
         encrypted.budget.encryptedData,
@@ -327,34 +310,30 @@ export class FHEEncryption {
         encrypted.amountPerTrade.encryptedData,
         encrypted.frequency.encryptedData,
         encrypted.minPrice.encryptedData,
-        encrypted.maxPrice.encryptedData
+        encrypted.maxPrice.encryptedData,
       ],
-      inputProof: encrypted.budget.proof // 简化版本，实际应该组合所有证明
-    }
+      inputProof: encrypted.budget.proof, // 简化版本，实际应该组合所有证明
+    };
   }
 
-  async decryptBalance(
-    encryptedBalance: string,
-    contractAddress: string,
-    signer: JsonRpcSigner
-  ): Promise<bigint> {
-    return await decryptUserBalance(encryptedBalance, contractAddress, signer)
+  async decryptBalance(encryptedBalance: string, contractAddress: string, signer: JsonRpcSigner): Promise<bigint> {
+    return await decryptUserBalance(encryptedBalance, contractAddress, signer);
   }
 
   getPublicKey(): string | null {
     // 这个方法在新的 SDK 中可能不需要
-    return null
+    return null;
   }
 
   isInitialized(): boolean {
-    return fhevmInstance !== null
+    return fhevmInstance !== null;
   }
 }
 
 // 单例实例（保持兼容性）
-export const fheEncryption = new FHEEncryption()
+export const fheEncryption = new FHEEncryption();
 
 // 兼容性函数
 export async function initializeFHECompat(provider: BrowserProvider): Promise<void> {
-  await fheEncryption.initialize(provider)
+  await fheEncryption.initialize(provider);
 }

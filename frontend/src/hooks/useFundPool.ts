@@ -3,7 +3,6 @@ import { ethers } from 'ethers';
 import { useContract, useContractRead, useContractWrite } from './useContract';
 import { useWalletStore } from '@/lib/store';
 import { SEPOLIA_CONTRACTS } from '@/config/contracts';
-import { encryptAmount } from '@/utils/fheEncryption';
 import FundPoolABI from '@/config/abis/FundPool.json';
 
 export interface FundPoolBalance {
@@ -64,28 +63,14 @@ export function useFundPool() {
   /**
    * Deposit USDC to the fund pool
    */
-  const deposit = useCallback(async (
-    amount: bigint,
-    contractAddress: string,
-    userAddress: string
-  ) => {
+  const deposit = useCallback(async (amount: bigint) => {
     setIsLoading(true);
     setError(null);
 
     try {
-      // Encrypt the amount for privacy
-      const { encryptedData, proof } = await encryptAmount(
-        amount,
-        contractAddress,
-        userAddress
-      );
-
-      // Call deposit function with encrypted amount and plaintext for USDC transfer
-      const tx = await depositAsync([
-        encryptedData,
-        proof,
-        amount.toString() // plaintext amount for USDC transfer (temporary solution)
-      ]);
+      // FundPool.deposit only needs the plaintext amount
+      // The contract handles internal encryption for balance tracking
+      const tx = await depositAsync([amount.toString()]);
 
       // Wait for transaction confirmation
       const receipt = await tx.wait();

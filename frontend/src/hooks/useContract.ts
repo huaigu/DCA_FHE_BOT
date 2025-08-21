@@ -2,12 +2,30 @@ import { ethers } from 'ethers';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useWalletStore } from '@/lib/store';
 
+// Type for Hardhat artifact
+interface HardhatArtifact {
+  abi: ethers.InterfaceAbi;
+  [key: string]: any;
+}
+
+/**
+ * Extract ABI from either raw ABI array or Hardhat artifact
+ */
+function extractABI(abiOrArtifact: ethers.InterfaceAbi | HardhatArtifact): ethers.InterfaceAbi {
+  // If it has an 'abi' property, it's a Hardhat artifact
+  if (typeof abiOrArtifact === 'object' && abiOrArtifact !== null && 'abi' in abiOrArtifact) {
+    return (abiOrArtifact as HardhatArtifact).abi;
+  }
+  // Otherwise, it's already an ABI
+  return abiOrArtifact as ethers.InterfaceAbi;
+}
+
 /**
  * Base hook for creating contract instances
  */
 export function useContract<T = ethers.Contract>(
   address: string,
-  abi: ethers.InterfaceAbi,
+  abiOrArtifact: ethers.InterfaceAbi | HardhatArtifact,
   withSigner = false
 ): T | null {
   const { provider, signer } = useWalletStore();
@@ -16,6 +34,7 @@ export function useContract<T = ethers.Contract>(
     if (!address || !provider) return null;
 
     try {
+      const abi = extractABI(abiOrArtifact);
       const contract = new ethers.Contract(
         address,
         abi,
@@ -26,7 +45,7 @@ export function useContract<T = ethers.Contract>(
       console.error('Failed to create contract instance:', error);
       return null;
     }
-  }, [address, abi, provider, signer, withSigner]);
+  }, [address, abiOrArtifact, provider, signer, withSigner]);
 }
 
 /**

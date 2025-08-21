@@ -79,14 +79,10 @@ export function DepositModal({ isOpen, onClose, onSuccess }: DepositModalProps) 
       setStep('deposit');
       toast({
         title: 'Processing Deposit',
-        description: 'Depositing USDC to FundPool with encryption...',
+        description: 'Depositing USDC to FundPool...',
       });
 
-      await deposit(
-        parsedAmount,
-        SEPOLIA_CONTRACTS.FUND_POOL,
-        address
-      );
+      await deposit(parsedAmount);
 
       // Step 3: Success
       setStep('success');
