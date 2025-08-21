@@ -32,6 +32,17 @@ export interface EncryptedDCAParams {
   maxPrice: { encryptedData: string; proof: string };
 }
 
+// 新的合约参数接口，匹配修正后的合约结构
+export interface ContractSubmitIntentParams {
+  budgetExt: string;
+  tradesCountExt: string; 
+  amountPerTradeExt: string;
+  frequencyExt: string;
+  minPriceExt: string;
+  maxPriceExt: string;
+  proof: string; // 统一的证明参数
+}
+
 // FHE 实例管理
 let fhevmInstance: any = null;
 let sdkInitialized = false;
@@ -141,68 +152,68 @@ export async function encryptDCAIntent(
       throw new Error("FHE not available - DCA intent encryption failed");
     }
 
-    // 为每个参数创建单独的加密输入
-    const encryptedParams: any = {};
+    // 创建单个加密输入缓冲区一次性加密所有参数
+    const buffer = fhevm.createEncryptedInput(contractAddress, userAddress);
+    
+    // 按顺序添加所有参数到缓冲区
+    buffer.add64(params.budget);                              // index 0: budget (euint64)
+    buffer.add32(params.tradesCount);                         // index 1: tradesCount (euint32)
+    buffer.add64(params.amountPerTrade);                      // index 2: amountPerTrade (euint64)
+    buffer.add32(params.frequency);                           // index 3: frequency (euint32)
+    buffer.add64(params.minPrice || BigInt(0));               // index 4: minPrice (euint64)
+    buffer.add64(params.maxPrice || BigInt(2 ** 32 - 1));     // index 5: maxPrice (euint64)
 
-    // 加密 budget (euint64)
-    let input = fhevm.createEncryptedInput(contractAddress, userAddress);
-    input.add64(params.budget);
-    let proof = input.encrypt();
-    encryptedParams.budget = {
-      encryptedData: proof.handles[0],
-      proof: proof.inputProof,
+    // 一次性加密所有参数
+    const ciphertexts = await buffer.encrypt();
+
+    // 构造返回对象，按照预期的索引顺序分配句柄
+    const encryptedParams: EncryptedDCAParams = {
+      budget: {
+        encryptedData: ciphertexts.handles[0],
+        proof: ciphertexts.inputProof,
+      },
+      tradesCount: {
+        encryptedData: ciphertexts.handles[1],
+        proof: ciphertexts.inputProof,
+      },
+      amountPerTrade: {
+        encryptedData: ciphertexts.handles[2],
+        proof: ciphertexts.inputProof,
+      },
+      frequency: {
+        encryptedData: ciphertexts.handles[3],
+        proof: ciphertexts.inputProof,
+      },
+      minPrice: {
+        encryptedData: ciphertexts.handles[4],
+        proof: ciphertexts.inputProof,
+      },
+      maxPrice: {
+        encryptedData: ciphertexts.handles[5],
+        proof: ciphertexts.inputProof,
+      },
     };
 
-    // 加密 tradesCount (euint32)
-    input = fhevm.createEncryptedInput(contractAddress, userAddress);
-    input.add32(params.tradesCount);
-    proof = input.encrypt();
-    encryptedParams.tradesCount = {
-      encryptedData: proof.handles[0],
-      proof: proof.inputProof,
-    };
-
-    // 加密 amountPerTrade (euint64)
-    input = fhevm.createEncryptedInput(contractAddress, userAddress);
-    input.add64(params.amountPerTrade);
-    proof = input.encrypt();
-    encryptedParams.amountPerTrade = {
-      encryptedData: proof.handles[0],
-      proof: proof.inputProof,
-    };
-
-    // 加密 frequency (euint32)
-    input = fhevm.createEncryptedInput(contractAddress, userAddress);
-    input.add32(params.frequency);
-    proof = input.encrypt();
-    encryptedParams.frequency = {
-      encryptedData: proof.handles[0],
-      proof: proof.inputProof,
-    };
-
-    // 加密 minPrice (euint64) - 使用默认值 0 如果未提供
-    input = fhevm.createEncryptedInput(contractAddress, userAddress);
-    input.add64(params.minPrice || BigInt(0));
-    proof = input.encrypt();
-    encryptedParams.minPrice = {
-      encryptedData: proof.handles[0],
-      proof: proof.inputProof,
-    };
-
-    // 加密 maxPrice (euint64) - 使用最大值如果未提供
-    input = fhevm.createEncryptedInput(contractAddress, userAddress);
-    input.add64(params.maxPrice || BigInt(2 ** 32 - 1));
-    proof = input.encrypt();
-    encryptedParams.maxPrice = {
-      encryptedData: proof.handles[0],
-      proof: proof.inputProof,
-    };
-
-    return encryptedParams as EncryptedDCAParams;
+    return encryptedParams;
   } catch (error) {
     console.error("Failed to encrypt DCA intent:", error);
     throw new Error("DCA intent encryption failed");
   }
+}
+
+/**
+ * 转换加密参数为合约调用格式
+ */
+export function convertToContractParams(encryptedParams: EncryptedDCAParams): ContractSubmitIntentParams {
+  return {
+    budgetExt: encryptedParams.budget.encryptedData,
+    tradesCountExt: encryptedParams.tradesCount.encryptedData,
+    amountPerTradeExt: encryptedParams.amountPerTrade.encryptedData,
+    frequencyExt: encryptedParams.frequency.encryptedData,
+    minPriceExt: encryptedParams.minPrice.encryptedData,
+    maxPriceExt: encryptedParams.maxPrice.encryptedData,
+    proof: encryptedParams.budget.proof // 所有参数使用同一个证明
+  };
 }
 
 /**
@@ -312,7 +323,7 @@ export class FHEEncryption {
         encrypted.minPrice.encryptedData,
         encrypted.maxPrice.encryptedData,
       ],
-      inputProof: encrypted.budget.proof, // 简化版本，实际应该组合所有证明
+      inputProof: encrypted.budget.proof, // 所有参数使用同一个证明
     };
   }
 

@@ -22,17 +22,12 @@ contract IntentCollector is SepoliaConfig, Ownable, ReentrancyGuard {
     /// @notice Structure for submitIntent parameters to avoid stack too deep
     struct SubmitIntentParams {
         externalEuint64 budgetExt;
-        bytes budgetProof;
         externalEuint32 tradesCountExt;
-        bytes tradesCountProof;
         externalEuint64 amountPerTradeExt;
-        bytes amountPerTradeProof;
         externalEuint32 frequencyExt;
-        bytes frequencyProof;
         externalEuint64 minPriceExt;
-        bytes minPriceProof;
         externalEuint64 maxPriceExt;
-        bytes maxPriceProof;
+        bytes proof; // 统一的证明，用于所有加密参数
     }
     
     /// @notice Structure representing an encrypted DCA intent
@@ -169,13 +164,13 @@ contract IntentCollector is SepoliaConfig, Ownable, ReentrancyGuard {
             }
         }
         
-        // Convert external encrypted inputs to internal encrypted values
-        euint64 budget = FHE.fromExternal(params.budgetExt, params.budgetProof);
-        euint32 tradesCount = FHE.fromExternal(params.tradesCountExt, params.tradesCountProof);
-        euint64 amountPerTrade = FHE.fromExternal(params.amountPerTradeExt, params.amountPerTradeProof);
-        euint32 frequency = FHE.fromExternal(params.frequencyExt, params.frequencyProof);
-        euint64 minPrice = FHE.fromExternal(params.minPriceExt, params.minPriceProof);
-        euint64 maxPrice = FHE.fromExternal(params.maxPriceExt, params.maxPriceProof);
+        // Convert external encrypted inputs to internal encrypted values using unified proof
+        euint64 budget = FHE.fromExternal(params.budgetExt, params.proof);
+        euint32 tradesCount = FHE.fromExternal(params.tradesCountExt, params.proof);
+        euint64 amountPerTrade = FHE.fromExternal(params.amountPerTradeExt, params.proof);
+        euint32 frequency = FHE.fromExternal(params.frequencyExt, params.proof);
+        euint64 minPrice = FHE.fromExternal(params.minPriceExt, params.proof);
+        euint64 maxPrice = FHE.fromExternal(params.maxPriceExt, params.proof);
         
         // Check user has sufficient balance in FundPool
         if (!fundPool.isBalanceInitialized(msg.sender)) revert InsufficientFundPoolBalance();

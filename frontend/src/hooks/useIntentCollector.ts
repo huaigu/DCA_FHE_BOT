@@ -100,20 +100,15 @@ export function useIntentCollector() {
         // Encrypt all DCA parameters
         const encryptedParams = await encryptDCAIntent(params, contractAddress, userAddress);
 
-        // Submit intent with parameters as a struct
+        // Submit intent with parameters as a struct using unified proof
         const submitIntentParams = {
           budgetExt: encryptedParams.budget.encryptedData,
-          budgetProof: encryptedParams.budget.proof,
           tradesCountExt: encryptedParams.tradesCount.encryptedData,
-          tradesCountProof: encryptedParams.tradesCount.proof,
           amountPerTradeExt: encryptedParams.amountPerTrade.encryptedData,
-          amountPerTradeProof: encryptedParams.amountPerTrade.proof,
           frequencyExt: encryptedParams.frequency.encryptedData,
-          frequencyProof: encryptedParams.frequency.proof,
           minPriceExt: encryptedParams.minPrice.encryptedData,
-          minPriceProof: encryptedParams.minPrice.proof,
           maxPriceExt: encryptedParams.maxPrice.encryptedData,
-          maxPriceProof: encryptedParams.maxPrice.proof,
+          proof: encryptedParams.budget.proof, // 使用统一的证明
         };
         
         const tx = await submitIntentAsync([submitIntentParams]);

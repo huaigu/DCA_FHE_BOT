@@ -819,19 +819,9 @@
               "type": "bytes32"
             },
             {
-              "internalType": "bytes",
-              "name": "budgetProof",
-              "type": "bytes"
-            },
-            {
               "internalType": "externalEuint32",
               "name": "tradesCountExt",
               "type": "bytes32"
-            },
-            {
-              "internalType": "bytes",
-              "name": "tradesCountProof",
-              "type": "bytes"
             },
             {
               "internalType": "externalEuint64",
@@ -839,29 +829,14 @@
               "type": "bytes32"
             },
             {
-              "internalType": "bytes",
-              "name": "amountPerTradeProof",
-              "type": "bytes"
-            },
-            {
               "internalType": "externalEuint32",
               "name": "frequencyExt",
               "type": "bytes32"
             },
             {
-              "internalType": "bytes",
-              "name": "frequencyProof",
-              "type": "bytes"
-            },
-            {
               "internalType": "externalEuint64",
               "name": "minPriceExt",
               "type": "bytes32"
-            },
-            {
-              "internalType": "bytes",
-              "name": "minPriceProof",
-              "type": "bytes"
             },
             {
               "internalType": "externalEuint64",
@@ -870,7 +845,7 @@
             },
             {
               "internalType": "bytes",
-              "name": "maxPriceProof",
+              "name": "proof",
               "type": "bytes"
             }
           ],

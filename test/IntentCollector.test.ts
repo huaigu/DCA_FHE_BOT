@@ -37,21 +37,16 @@ async function deployFixture() {
   return { intentCollector, contractAddress, deployer, fundPool, mockUSDC };
 }
 
-// Helper function to create submitIntent params
+// Helper function to create submitIntent params with unified proof
 function createSubmitIntentParams(encryptedInput: any) {
   return {
     budgetExt: encryptedInput.handles[0],
-    budgetProof: encryptedInput.inputProof,
     tradesCountExt: encryptedInput.handles[1],
-    tradesCountProof: encryptedInput.inputProof,
     amountPerTradeExt: encryptedInput.handles[2],
-    amountPerTradeProof: encryptedInput.inputProof,
     frequencyExt: encryptedInput.handles[3],
-    frequencyProof: encryptedInput.inputProof,
     minPriceExt: encryptedInput.handles[4],
-    minPriceProof: encryptedInput.inputProof,
     maxPriceExt: encryptedInput.handles[5],
-    maxPriceProof: encryptedInput.inputProof
+    proof: encryptedInput.inputProof // 统一的证明参数
   };
 }
 
