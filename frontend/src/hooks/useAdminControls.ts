@@ -95,7 +95,7 @@ export function useAdminControls() {
 
   // Check if batch is ready
   const fetchBatchReady = useCallback(async () => {
-    if (!isConnected || !provider || !isOwner) return;
+    if (!isConnected || !provider) return;
     
     try {
       const intentCollector = getIntentCollector();
@@ -109,7 +109,7 @@ export function useAdminControls() {
     } catch (error) {
       console.error('Error checking batch ready:', error);
     }
-  }, [isConnected, provider, isOwner, getIntentCollector]);
+  }, [isConnected, provider, getIntentCollector]);
 
   // Fetch pending intents count
   const fetchPendingCount = useCallback(async () => {
@@ -175,13 +175,16 @@ export function useAdminControls() {
 
   // Refresh all data
   const refreshData = useCallback(async () => {
-    if (!isOwner) return;
+    // Always check batch ready status (no owner restriction)
+    await fetchBatchReady();
     
-    await Promise.all([
-      fetchBatchStats(),
-      fetchBatchReady(),
-      fetchPendingCount(),
-    ]);
+    // Owner-only data
+    if (isOwner) {
+      await Promise.all([
+        fetchBatchStats(),
+        fetchPendingCount(),
+      ]);
+    }
   }, [isOwner, fetchBatchStats, fetchBatchReady, fetchPendingCount]);
 
   // Start/stop polling
@@ -198,13 +201,15 @@ export function useAdminControls() {
   useEffect(() => {
     if (isConnected && provider) {
       fetchOwner();
+      // Always fetch batch ready status when wallet connects
+      fetchBatchReady();
     } else {
       setOwner(null);
       setBatchStats(null);
       setBatchReadyInfo(null);
       setPendingIntentsCount(null);
     }
-  }, [isConnected, provider, fetchOwner]);
+  }, [isConnected, provider, fetchOwner, fetchBatchReady]);
 
   // Auto-refresh when owner status is determined
   useEffect(() => {
@@ -215,14 +220,14 @@ export function useAdminControls() {
 
   // Auto-refresh polling
   useEffect(() => {
-    if (!isPolling || !isOwner) return;
+    if (!isPolling || !isConnected) return;
 
     const interval = setInterval(() => {
       refreshData();
     }, 10000); // Every 10 seconds
 
     return () => clearInterval(interval);
-  }, [isPolling, isOwner, refreshData]);
+  }, [isPolling, isConnected, refreshData]);
 
   return {
     // Owner status

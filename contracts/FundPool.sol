@@ -244,15 +244,9 @@ contract FundPool is IFundPool, SepoliaConfig, Ownable, ReentrancyGuard {
 
         WithdrawalRequest storage request = withdrawalRequests[requestId];
         require(!request.processed, "Withdrawal already processed");
-        require(request.requestId != 0, "Invalid request ID");
-        require(request.user != address(0), "Invalid user address");
 
         address user = request.user;
         uint256 usdcAmount = uint256(decryptedBalance);
-
-        // SECURITY: Verify the request belongs to the correct user
-        // Note: This check is redundant in current implementation but adds security
-        require(request.user == user, "Request user mismatch");
 
         // Mark as processed and clear active withdrawal request
         request.processed = true;
@@ -262,7 +256,7 @@ contract FundPool is IFundPool, SepoliaConfig, Ownable, ReentrancyGuard {
         // regardless of the decrypted amount to maintain state consistency
         euint64 zeroBalance = FHE.asEuint64(0);
         encryptedBalances[user] = zeroBalance;
-        
+
         // Set comprehensive FHE permissions
         FHE.allowThis(zeroBalance);
         FHE.allow(zeroBalance, user);
@@ -274,7 +268,6 @@ contract FundPool is IFundPool, SepoliaConfig, Ownable, ReentrancyGuard {
         }
 
         // ALWAYS update user state to WITHDRAWN when withdrawal request completes
-        // This fixes the issue where users get stuck in WITHDRAWING state
         if (intentCollector != address(0)) {
             IntentCollector(intentCollector).updateUserState(user, IntentCollector.UserState.WITHDRAWN);
         }

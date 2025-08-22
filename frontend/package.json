@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "script:check-batch-ready": "node scripts/check-batch-ready.js",
+    "script:check-batch-size": "node scripts/check-batch-size.js",
+    "script:set-batch-size": "node scripts/simple-set-batch-size.js"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.0.5",
@@ -19,6 +22,7 @@
     "@zama-fhe/relayer-sdk": "^0.1.2",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
+    "dotenv": "^16.0.0",
     "ethers": "^6.8.0",
     "framer-motion": "^10.16.0",
     "lucide-react": "^0.294.0",

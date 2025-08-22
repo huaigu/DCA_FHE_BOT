@@ -554,3 +554,61 @@ task("task:fund-balance", "Check user's FundPool balance")
       console.error("❌ Error checking FundPool balance:", error);
     }
   });
+
+/**
+ * Set minimum batch size for IntentCollector
+ * Example:
+ *   - npx hardhat --network localhost task:set-min-batch-size --size 2
+ *   - npx hardhat --network sepolia task:set-min-batch-size --size 3
+ */
+task("task:set-min-batch-size", "Set minimum batch size for IntentCollector")
+  .addParam("size", "New minimum batch size (1-100)")
+  .setAction(async function (taskArguments: TaskArguments, hre) {
+    const { deployments, ethers } = hre;
+    const [signer] = await ethers.getSigners();
+
+    try {
+      const newMinBatchSize = parseInt(taskArguments.size);
+      
+      if (newMinBatchSize < 1 || newMinBatchSize > 100) {
+        throw new Error("MinBatchSize must be between 1 and 100");
+      }
+      
+      console.log("🔧 Setting MinBatchSize...");
+      console.log("├── Deployer:", signer.address);
+      console.log("└── New size:", newMinBatchSize);
+      
+      const intentCollectorDeployment = await deployments.get("IntentCollector");
+      const intentCollector = await ethers.getContractAt("IntentCollector", intentCollectorDeployment.address);
+      
+      // Check current value
+      const currentMinBatchSize = await intentCollector.minBatchSize();
+      console.log("📊 Current MinBatchSize:", currentMinBatchSize.toString());
+      
+      if (currentMinBatchSize.toString() === newMinBatchSize.toString()) {
+        console.log("✅ MinBatchSize is already set to", newMinBatchSize);
+        return;
+      }
+      
+      // Set new value
+      console.log("⏳ Updating MinBatchSize...");
+      const tx = await intentCollector.setMinBatchSize(newMinBatchSize);
+      console.log("📝 Transaction hash:", tx.hash);
+      
+      const receipt = await tx.wait();
+      console.log("✅ Transaction confirmed in block:", receipt.blockNumber);
+      
+      // Verify the change
+      const updatedMinBatchSize = await intentCollector.minBatchSize();
+      console.log("🎉 Updated MinBatchSize:", updatedMinBatchSize.toString());
+      
+      if (updatedMinBatchSize.toString() === newMinBatchSize.toString()) {
+        console.log("✅ MinBatchSize successfully updated!");
+      } else {
+        console.log("❌ MinBatchSize update failed!");
+      }
+      
+    } catch (error) {
+      console.error("❌ Error setting MinBatchSize:", error);
+    }
+  });

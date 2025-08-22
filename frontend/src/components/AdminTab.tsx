@@ -10,15 +10,15 @@ export function AdminTab() {
   const { address, isConnected } = useWalletStore();
   const adminControls = useAdminControls();
 
-  const { isOwner, owner, startPolling, stopPolling } = adminControls;
+  const { startPolling, stopPolling } = adminControls;
 
-  // Start polling when component mounts and user is owner
+  // Start polling when component mounts and wallet is connected
   useEffect(() => {
-    if (isOwner) {
+    if (isConnected) {
       startPolling();
       return () => stopPolling();
     }
-  }, [isOwner, startPolling, stopPolling]);
+  }, [isConnected, startPolling, stopPolling]);
 
   // Show connection prompt if not connected
   if (!isConnected) {
