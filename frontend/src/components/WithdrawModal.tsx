@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/lib/hooks/use-toast';
 import { useFundPool } from '@/hooks/useFundPool';
-import { useConfidentialToken } from '@/hooks/useConfidentialToken';
+import { useBatchProcessor } from '@/hooks/useBatchProcessor';
 import { useUSDC } from '@/hooks/useUSDC';
 import { useWalletStore } from '@/lib/store';
 
@@ -19,13 +19,14 @@ interface WithdrawModalProps {
   onSuccess?: () => void;
 }
 
-type WithdrawTab = 'usdc' | 'weth';
+type WithdrawTab = 'usdc' | 'eth';
 
 export function WithdrawModal({ isOpen, onClose, onSuccess }: WithdrawModalProps) {
   const [activeTab, setActiveTab] = useState<WithdrawTab>('usdc');
   const [amount, setAmount] = useState('');
   const [showDecrypted, setShowDecrypted] = useState(false);
   const [decryptedBalance, setDecryptedBalance] = useState<string | null>(null);
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
   const { toast } = useToast();
   const { address } = useWalletStore();
 
@@ -38,21 +39,26 @@ export function WithdrawModal({ isOpen, onClose, onSuccess }: WithdrawModalProps
   } = useFundPool();
 
   const {
-    balance: tokenBalance,
-    withdraw: withdrawFromToken,
-    tokenInfo,
-    formatEncryptedBalance,
-    decryptBalance,
-    isLoading: isTokenLoading
-  } = useConfidentialToken();
+    ethBalance: tokenBalance,
+    pendingUsdcWithdrawal,
+    pendingEthWithdrawal,
+    initiateUsdcWithdrawal,
+    withdrawEth,
+    isLoading: isBatchProcessorLoading
+  } = useBatchProcessor();
+  
+  const tokenInfo = {
+    name: 'Ethereum',
+    symbol: 'ETH'
+  };
 
   const { formatAmount } = useUSDC();
 
-  const isLoading = isFundPoolLoading || isTokenLoading;
+  const isLoading = isFundPoolLoading || isBatchProcessorLoading || isWithdrawing;
 
-  // Parse input amount
-  const parsedAmount = amount ? BigInt(Math.floor(parseFloat(amount) * 1e6)) : BigInt(0);
-  const hasValidAmount = parsedAmount > 0;
+  // For new withdrawal system, we don't need amount input
+  // The contracts handle full balance withdrawal automatically
+  const hasValidAmount = true;
 
   /**
    * Handle balance decryption
@@ -93,26 +99,31 @@ export function WithdrawModal({ isOpen, onClose, onSuccess }: WithdrawModalProps
    * Handle withdrawal
    */
   const handleWithdraw = useCallback(async () => {
-    if (!hasValidAmount || !address) return;
+    if (!address) return;
 
+    setIsWithdrawing(true);
+    
     try {
       toast({
-        title: 'Processing Withdrawal',
-        description: `Withdrawing ${amount} ${activeTab.toUpperCase()}...`,
+        title: 'Initiating Withdrawal',
+        description: `Starting ${activeTab.toUpperCase()} withdrawal process...`,
       });
 
       if (activeTab === 'usdc') {
-        // Withdraw from FundPool
-        await withdrawFromFundPool(parsedAmount);
+        // Initiate USDC withdrawal (2-step process)
+        await initiateUsdcWithdrawal();
+        toast({
+          title: 'USDC Withdrawal Initiated',
+          description: 'Step 1 complete. Waiting for FHE decryption callback...',
+        });
       } else {
-        // Withdraw from ConfidentialToken
-        await withdrawFromToken(parsedAmount);
+        // Initiate ETH withdrawal (2-step process)
+        await withdrawEth();
+        toast({
+          title: 'ETH Withdrawal Initiated', 
+          description: 'Step 1 complete. Waiting for FHE decryption callback...',
+        });
       }
-
-      toast({
-        title: 'Withdrawal Successful',
-        description: `Successfully withdrew ${amount} ${activeTab.toUpperCase()}.`,
-      });
 
       // Reset form and close
       setAmount('');
@@ -128,15 +139,14 @@ export function WithdrawModal({ isOpen, onClose, onSuccess }: WithdrawModalProps
         description: error instanceof Error ? error.message : 'Unknown error occurred.',
         variant: 'destructive',
       });
+    } finally {
+      setIsWithdrawing(false);
     }
   }, [
-    hasValidAmount,
     address,
-    amount,
     activeTab,
-    parsedAmount,
-    withdrawFromFundPool,
-    withdrawFromToken,
+    initiateUsdcWithdrawal,
+    withdrawEth,
     toast,
     onSuccess,
     onClose
@@ -165,8 +175,9 @@ export function WithdrawModal({ isOpen, onClose, onSuccess }: WithdrawModalProps
 
   if (!isOpen) return null;
 
-  const currentBalance = activeTab === 'usdc' ? fundPoolBalance : tokenBalance;
-  const isInitialized = currentBalance.isInitialized;
+  // For encrypted balances, we can't know if there's anything to withdraw beforehand
+  // So we always allow withdrawal attempts - the contract will handle empty balances
+  const canWithdraw = true;
 
   return (
     <AnimatePresence>
@@ -212,12 +223,12 @@ export function WithdrawModal({ isOpen, onClose, onSuccess }: WithdrawModalProps
                 USDC
               </Button>
               <Button
-                variant={activeTab === 'weth' ? 'default' : 'outline'}
+                variant={activeTab === 'eth' ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => setActiveTab('weth')}
+                onClick={() => setActiveTab('eth')}
                 className="flex-1"
               >
-                {tokenInfo.symbol}
+                ETH
               </Button>
             </div>
 
@@ -226,78 +237,55 @@ export function WithdrawModal({ isOpen, onClose, onSuccess }: WithdrawModalProps
               <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-sm font-medium">
-                    {activeTab === 'usdc' ? 'FundPool Balance' : `${tokenInfo.symbol} Balance`}
+                    {activeTab === 'usdc' ? 'FundPool Balance' : 'ETH Balance'}
                   </span>
-                  {isInitialized && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleDecryptBalance}
-                      className="h-6 px-2 text-xs"
-                    >
-                      {showDecrypted ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                      {showDecrypted ? 'Hide' : 'Decrypt'}
-                    </Button>
-                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleDecryptBalance}
+                    className="h-6 px-2 text-xs"
+                  >
+                    {showDecrypted ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                    {showDecrypted ? 'Hide' : 'Decrypt'}
+                  </Button>
                 </div>
                 
                 <div className="text-lg font-semibold">
-                  {isInitialized ? (
-                    showDecrypted && decryptedBalance ? (
-                      `${decryptedBalance} ${activeTab.toUpperCase()}`
-                    ) : (
-                      '[Encrypted Balance]'
-                    )
+                  {showDecrypted && decryptedBalance ? (
+                    `${decryptedBalance} ${activeTab.toUpperCase()}`
                   ) : (
-                    `0 ${activeTab.toUpperCase()}`
+                    `[Encrypted ${activeTab.toUpperCase()} Balance]`
+                  )}
+                  {/* Show pending status */}
+                  {((activeTab === 'usdc' && pendingUsdcWithdrawal) || (activeTab === 'eth' && pendingEthWithdrawal)) && (
+                    <div className="text-xs text-blue-600 mt-1">
+                      Previous withdrawal pending...
+                    </div>
                   )}
                 </div>
               </div>
 
-              {/* Amount Input */}
-              {isInitialized && (
-                <div className="space-y-2">
-                  <Label htmlFor="withdrawAmount">Amount to Withdraw</Label>
-                  <div className="relative">
-                    <Input
-                      id="withdrawAmount"
-                      type="text"
-                      placeholder="0.00"
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
-                      className="pr-20"
-                    />
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                      {showDecrypted && decryptedBalance && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={setMaxAmount}
-                          className="h-6 px-2 text-xs"
-                        >
-                          MAX
-                        </Button>
-                      )}
-                      <span className="text-sm text-gray-500">
-                        {activeTab.toUpperCase()}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
+              {/* Withdrawal Info - No amount input needed */}
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <p className="text-sm text-blue-800 dark:text-blue-200 font-medium mb-2">
+                  Full Balance Withdrawal
+                </p>
+                <p className="text-xs text-blue-700 dark:text-blue-300">
+                  This will withdraw your entire encrypted {activeTab.toUpperCase()} balance. 
+                  The exact amount will be determined during the FHE decryption process.
+                  {/* Explain why we can always try */}
+                </p>
+                <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                  💡 Since your balance is encrypted, you can always attempt withdrawal - 
+                  the contract will handle the case if your balance is zero.
+                </p>
+              </div>
 
-              {/* Validation Messages */}
-              {!isInitialized && (
+              {/* Show pending withdrawal warning */}
+              {((activeTab === 'usdc' && pendingUsdcWithdrawal) || (activeTab === 'eth' && pendingEthWithdrawal)) && (
                 <div className="flex items-center gap-2 text-sm text-yellow-600">
                   <AlertTriangle className="h-4 w-4" />
-                  No balance available to withdraw
-                </div>
-              )}
-
-              {amount && !hasValidAmount && (
-                <div className="flex items-center gap-2 text-sm text-red-500">
-                  <AlertTriangle className="h-4 w-4" />
-                  Invalid amount
+                  A withdrawal is already in progress for this token
                 </div>
               )}
 
@@ -316,7 +304,10 @@ export function WithdrawModal({ isOpen, onClose, onSuccess }: WithdrawModalProps
               {/* Withdraw Button */}
               <Button
                 onClick={handleWithdraw}
-                disabled={!hasValidAmount || !isInitialized || isLoading}
+                disabled={isLoading || 
+                  (activeTab === 'usdc' && !!pendingUsdcWithdrawal) ||
+                  (activeTab === 'eth' && !!pendingEthWithdrawal)
+                }
                 className="w-full"
               >
                 {isLoading ? (
@@ -328,20 +319,23 @@ export function WithdrawModal({ isOpen, onClose, onSuccess }: WithdrawModalProps
                     >
                       ⏳
                     </motion.div>
-                    Withdrawing...
+                    Initiating...
                   </>
                 ) : (
                   <>
                     <Download className="h-4 w-4 mr-2" />
-                    Withdraw {activeTab.toUpperCase()}
+                    Initiate {activeTab.toUpperCase()} Withdrawal
                   </>
                 )}
               </Button>
 
               {/* Note */}
-              <div className="text-xs text-gray-500 text-center">
+              <div className="text-xs text-gray-500 text-center space-y-1">
                 <p>
-                  Withdrawals require proof that the amount matches your encrypted balance.
+                  This is a 2-step withdrawal process using FHE decryption.
+                </p>
+                <p>
+                  Step 1: Initiate withdrawal. Step 2: Wait for automatic completion.
                 </p>
               </div>
             </div>

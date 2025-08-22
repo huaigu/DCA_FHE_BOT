@@ -65,6 +65,8 @@ For detailed instructions see:
    npx hardhat test --network sepolia
    ```
 
+7. **USDC Address** https://docs.chain.link/ccip/directory/testnet/token/USDC
+
 ## 📁 Project Structure
 
 ```

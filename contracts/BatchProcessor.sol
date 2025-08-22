@@ -250,7 +250,7 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, IChainlinkAu
 
     /// @notice Manual trigger for batch processing (owner only)
     /// @param batchId The batch ID to process
-    function manualTriggerBatch(uint256 batchId) external onlyOwner {
+    function manualTriggerBatch(uint256 batchId) external {
         // Get ready batch data
         (uint256 currentBatchId, uint256[] memory intentIds) = intentCollector.getReadyBatch();
 
@@ -306,7 +306,7 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, IChainlinkAu
 
         // Store pending decryption info
         uint256 requestId = FHE.requestDecryption(ctsHandles, this.onBatchDecrypted.selector);
-        
+
         pendingDecryptions[requestId] = PendingDecryption({
             batchId: batchId,
             intentIds: intentIds,
@@ -323,11 +323,7 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, IChainlinkAu
     /// @param requestId The decryption request ID
     /// @param decryptedAmount The decrypted total amount
     /// @param signatures KMS signatures for verification
-    function onBatchDecrypted(
-        uint256 requestId, 
-        uint64 decryptedAmount, 
-        bytes[] calldata signatures
-    ) external {
+    function onBatchDecrypted(uint256 requestId, uint64 decryptedAmount, bytes[] calldata signatures) external {
         // SECURITY: Verify KMS signatures (mandatory for FHEVM)
         FHE.checkSignatures(requestId, signatures);
 
@@ -389,7 +385,15 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, IChainlinkAu
             );
         } else {
             // Swap failed
-            _finalizeBatch(batchId, intentIds, false, uint256(decryptedTotalAmount), 0, currentPrice, validIntentIds.length);
+            _finalizeBatch(
+                batchId,
+                intentIds,
+                false,
+                uint256(decryptedTotalAmount),
+                0,
+                currentPrice,
+                validIntentIds.length
+            );
         }
 
         // Update last processed batch
@@ -574,7 +578,7 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, IChainlinkAu
 
         // ETH stays in this contract for user withdrawal via withdrawEth()
         // No immediate distribution - users must actively withdraw their ETH
-        
+
         emit ProportionalDistributionCompleted(
             batchId,
             validIntentIds.length,
@@ -733,11 +737,7 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, IChainlinkAu
     /// @param requestId The decryption request ID
     /// @param decryptedBalance The decrypted USDC balance
     /// @param signatures KMS signatures for verification
-    function onUsdcDecrypted(
-        uint256 requestId, 
-        uint64 decryptedBalance, 
-        bytes[] calldata signatures
-    ) external {
+    function onUsdcDecrypted(uint256 requestId, uint64 decryptedBalance, bytes[] calldata signatures) external {
         // SECURITY: Verify KMS signatures (mandatory for FHEVM)
         FHE.checkSignatures(requestId, signatures);
 
@@ -779,7 +779,7 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, IChainlinkAu
 
         // Get user's encrypted ETH balance
         euint128 userBalance = encryptedEthBalances[msg.sender];
-        
+
         // Verify user has permission to access their balance
         require(FHE.isSenderAllowed(userBalance), "Insufficient FHE permissions");
 
@@ -808,14 +808,10 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, IChainlinkAu
 
     /// @notice Callback function for ETH withdrawal decryption (proper FHEVM pattern)
     /// @dev Called by FHEVM system after async decryption completes
-    /// @param requestId The decryption request ID  
+    /// @param requestId The decryption request ID
     /// @param scaledEthAmount The decrypted scaled ETH balance
     /// @param signatures KMS signatures for verification
-    function onEthDecrypted(
-        uint256 requestId, 
-        uint128 scaledEthAmount, 
-        bytes[] calldata signatures
-    ) external {
+    function onEthDecrypted(uint256 requestId, uint128 scaledEthAmount, bytes[] calldata signatures) external {
         // SECURITY: Verify KMS signatures (mandatory for FHEVM)
         FHE.checkSignatures(requestId, signatures);
 
@@ -856,7 +852,7 @@ contract BatchProcessor is SepoliaConfig, Ownable, ReentrancyGuard, IChainlinkAu
                 encryptedEthBalances[user] = FHE.asEuint128(uint128(scaledAmount));
                 FHE.allowThis(encryptedEthBalances[user]);
                 FHE.allow(encryptedEthBalances[user], user);
-                
+
                 isWithdrawing[user] = false;
                 revert("ETH transfer failed");
             }

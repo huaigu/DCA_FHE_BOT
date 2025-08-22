@@ -6,18 +6,22 @@ import { Button } from "@/components/ui/button";
 import { DCAForm } from "@/components/DCAForm";
 import { BatchStatus } from "@/components/BatchStatus";
 import { BalanceView } from "@/components/BalanceView";
+import { AdminTab } from "@/components/AdminTab";
 import { WalletConnect } from "@/components/WalletConnect";
-import { Shield, TrendingUp, Users, Eye, Github, ExternalLink, Zap, Lock } from "lucide-react";
+// Admin controls and wallet store are used within individual components
+import { Shield, TrendingUp, Users, Eye, Github, ExternalLink, Zap, Lock, Settings } from "lucide-react";
 
-type TabType = "create" | "status" | "balance";
+type TabType = "create" | "status" | "balance" | "admin";
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<TabType>("create");
+  // Admin controls will be used inside AdminTab component
 
   const tabs = [
     { id: "create", label: "Create Intent", icon: Shield },
     { id: "status", label: "Batch Status", icon: Users },
     { id: "balance", label: "My Balance", icon: Eye },
+    { id: "admin", label: "Admin Panel", icon: Settings },
   ] as const;
 
   return (
@@ -152,6 +156,7 @@ export default function HomePage() {
               {activeTab === "create" && <DCAForm />}
               {activeTab === "status" && <BatchStatus />}
               {activeTab === "balance" && <BalanceView />}
+              {activeTab === "admin" && <AdminTab />}
             </motion.div>
           </div>
         </div>

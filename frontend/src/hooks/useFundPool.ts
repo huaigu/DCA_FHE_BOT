@@ -56,9 +56,32 @@ export function useFundPool() {
     false // temporarily disabled
   );
 
+  // Get active withdrawal request
+  const {
+    data: activeWithdrawalRequest,
+    refetch: refetchWithdrawalRequest
+  } = useContractRead<string>(
+    contract,
+    'activeWithdrawalRequest',
+    address ? [address] : [],
+    false // temporarily disabled
+  );
+
+  // Get withdrawal status
+  const {
+    data: withdrawalStatus,
+    refetch: refetchWithdrawalStatus
+  } = useContractRead<[boolean, string, string]>(
+    contract,
+    'getWithdrawalStatus',
+    address ? [address] : [],
+    false // temporarily disabled
+  );
+
   // Contract write functions
   const { writeAsync: depositAsync } = useContractWrite(contract, 'deposit');
   const { writeAsync: withdrawAsync } = useContractWrite(contract, 'withdraw');
+  const { writeAsync: initiateWithdrawalAsync } = useContractWrite(contract, 'initiateWithdrawal');
 
   /**
    * Deposit USDC to the fund pool
@@ -129,6 +152,38 @@ export function useFundPool() {
   }, [withdrawAsync, refetchBalance, refetchTotalBalance]);
 
   /**
+   * Initiate withdrawal from the fund pool (2-step process)
+   */
+  const initiateWithdrawal = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Call initiateWithdrawal function (no parameters needed)
+      const tx = await initiateWithdrawalAsync([]);
+
+      // Wait for transaction confirmation
+      const receipt = await tx.wait();
+      
+      // Refresh balance data and withdrawal status
+      await Promise.all([
+        refetchBalance(),
+        refetchTotalBalance(),
+        refetchWithdrawalRequest(),
+        refetchWithdrawalStatus()
+      ]);
+
+      return receipt;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Withdrawal initiation failed';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [initiateWithdrawalAsync, refetchBalance, refetchTotalBalance]);
+
+  /**
    * Format balance for display
    */
   const formatBalance = useCallback((encrypted: string): string => {
@@ -154,9 +209,16 @@ export function useFundPool() {
     totalPoolBalance: totalPoolBalance || BigInt(0),
     isBalanceLoading,
     
+    // Withdrawal status
+    activeWithdrawalRequest: activeWithdrawalRequest || '0',
+    isPendingWithdrawal: !!(withdrawalStatus?.[0]),
+    withdrawalRequestId: withdrawalStatus?.[1] || '0',
+    withdrawalTimestamp: withdrawalStatus?.[2] || '0',
+    
     // Actions
     deposit,
     withdraw,
+    initiateWithdrawal,
     
     // Loading states
     isLoading,

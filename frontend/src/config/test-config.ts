@@ -7,7 +7,7 @@ console.log('================================================');
 console.log('\n📋 Contract Addresses:');
 console.log('├── FundPool:', SEPOLIA_CONTRACTS.FUND_POOL);
 console.log('├── IntentCollector:', SEPOLIA_CONTRACTS.INTENT_COLLECTOR);
-console.log('├── ConfidentialToken:', SEPOLIA_CONTRACTS.CONFIDENTIAL_TOKEN);
+// console.log('├── ConfidentialToken:', SEPOLIA_CONTRACTS.CONFIDENTIAL_TOKEN); // Removed in v2
 console.log('├── BatchProcessor:', SEPOLIA_CONTRACTS.BATCH_PROCESSOR);
 console.log('├── USDC:', SEPOLIA_CONTRACTS.USDC);
 console.log('├── WETH:', SEPOLIA_CONTRACTS.WETH);

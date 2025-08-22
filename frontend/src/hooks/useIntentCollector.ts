@@ -93,11 +93,15 @@ export function useIntentCollector() {
    */
   const submitIntent = useCallback(
     async (params: DCAIntentParams, contractAddress: string, userAddress: string) => {
-      setIsLoading(true);
+      // Reset error state and set loading
       setError(null);
+      setIsLoading(true);
 
       try {
+        console.log("🔐 Starting intent submission...");
+        
         // Encrypt all DCA parameters
+        console.log("🔐 Encrypting DCA parameters...");
         const encryptedParams = await encryptDCAIntent(params, contractAddress, userAddress);
 
         // Submit intent with parameters as a struct using unified proof
@@ -111,28 +115,37 @@ export function useIntentCollector() {
           proof: encryptedParams.budget.proof, // 使用统一的证明
         };
         
+        console.log("📤 Submitting transaction...");
         const tx = await submitIntentAsync([submitIntentParams]);
 
+        console.log("⏳ Waiting for confirmation...");
         // Wait for transaction confirmation
         const receipt = await tx.wait();
 
+        console.log("✅ Transaction confirmed:", receipt.hash);
+        
         // Extract intent ID from events
         const intentSubmittedEvent = receipt.logs.find((log: any) => log.fragment?.name === "IntentSubmitted");
 
         const intentId = intentSubmittedEvent ? intentSubmittedEvent.args[0] : null;
 
         // Refresh data
+        console.log("🔄 Refreshing data...");
         await Promise.all([refetchUserIntents(), refetchBatchStatus(), refetchReadyBatch(), refetchBatchStats()]);
 
+        console.log("🎉 Intent submission completed!");
         return {
           receipt,
           intentId,
         };
       } catch (err) {
+        console.error("❌ Intent submission failed:", err);
         const errorMessage = err instanceof Error ? err.message : "Intent submission failed";
         setError(errorMessage);
         throw new Error(errorMessage);
       } finally {
+        // Always reset loading state
+        console.log("🏁 Resetting loading state");
         setIsLoading(false);
       }
     },

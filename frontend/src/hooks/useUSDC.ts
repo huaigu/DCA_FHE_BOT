@@ -203,6 +203,23 @@ export function useUSDC() {
   );
 
   /**
+   * Get USDC balance for a specific address
+   */
+  const getBalanceOf = useCallback(async (address: string): Promise<bigint> => {
+    if (!contract || !address) {
+      return BigInt(0);
+    }
+
+    try {
+      const balance = await contract.balanceOf(address);
+      return balance || BigInt(0);
+    } catch (error) {
+      console.error('Error fetching balance for address:', address, error);
+      return BigInt(0);
+    }
+  }, [contract]);
+
+  /**
    * Check if user has sufficient balance
    */
   const hasSufficientBalance = useCallback(
@@ -236,15 +253,30 @@ export function useUSDC() {
    * Format USDC amount (6 decimals)
    */
   const formatAmount = useCallback(
-    (amount: bigint, showSymbol = true): string => {
+    (amount: string | number | bigint, showSymbol = true): string => {
+      // Convert amount to BigInt if it's not already
+      let amountBigInt: bigint;
+      try {
+        if (typeof amount === 'bigint') {
+          amountBigInt = amount;
+        } else if (typeof amount === 'string') {
+          amountBigInt = BigInt(amount);
+        } else {
+          amountBigInt = BigInt(Math.floor(amount));
+        }
+      } catch (error) {
+        console.error('Failed to convert amount to BigInt:', amount, error);
+        return showSymbol ? `0 ${tokenInfo.symbol || "USDC"}` : '0';
+      }
+
       const decimalsCount = typeof tokenInfo.decimals === "number" ? tokenInfo.decimals : 6; // ensure it's a number
       // Create divisor by multiplying BigInt(10) decimalsCount times
       let divisor = BigInt(1);
       for (let i = 0; i < decimalsCount; i++) {
         divisor = divisor * BigInt(10);
       }
-      const whole = amount / divisor;
-      const fraction = amount % divisor;
+      const whole = amountBigInt / divisor;
+      const fraction = amountBigInt % divisor;
 
       const formattedFraction = fraction.toString().padStart(decimalsCount, "0").replace(/0+$/, "");
       const result = formattedFraction ? `${whole}.${formattedFraction}` : whole.toString();
@@ -303,6 +335,7 @@ export function useUSDC() {
     needsApproval,
     formatAmount,
     parseAmount,
+    getBalanceOf,
 
     // Loading states
     isLoading,

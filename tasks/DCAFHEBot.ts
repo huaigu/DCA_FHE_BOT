@@ -48,13 +48,11 @@ task("task:address", "Prints the DCA FHE Bot contract addresses").setAction(asyn
   try {
     const fundPool = await deployments.get("FundPool");
     const intentCollector = await deployments.get("IntentCollector");
-    const confidentialToken = await deployments.get("ConfidentialToken");
     const batchProcessor = await deployments.get("BatchProcessor");
 
     console.log("🎯 DCA FHE Bot Contract Addresses:");
     console.log("├── FundPool:", fundPool.address);
     console.log("├── IntentCollector:", intentCollector.address);
-    console.log("├── ConfidentialToken:", confidentialToken.address);
     console.log("└── BatchProcessor:", batchProcessor.address);
 
     // Also show mock contracts if on localhost/hardhat
@@ -323,19 +321,19 @@ task("task:system-info", "Display comprehensive system information")
 
     try {
       // Get contract deployments
+      const fundPoolDeployment = await deployments.get("FundPool");
       const intentCollectorDeployment = await deployments.get("IntentCollector");
-      const confidentialTokenDeployment = await deployments.get("ConfidentialToken");
       const batchProcessorDeployment = await deployments.get("BatchProcessor");
 
       // Get contract instances
+      const fundPool = await ethers.getContractAt("FundPool", fundPoolDeployment.address);
       const intentCollector = await ethers.getContractAt("IntentCollector", intentCollectorDeployment.address);
-      const confidentialToken = await ethers.getContractAt("ConfidentialToken", confidentialTokenDeployment.address);
       const batchProcessor = await ethers.getContractAt("BatchProcessor", batchProcessorDeployment.address);
 
       // Contract addresses
       console.log("\n📍 Contract Addresses:");
+      console.log("├── FundPool:", fundPoolDeployment.address);
       console.log("├── IntentCollector:", intentCollectorDeployment.address);
-      console.log("├── ConfidentialToken:", confidentialTokenDeployment.address);
       console.log("└── BatchProcessor:", batchProcessorDeployment.address);
 
       // System status
@@ -344,25 +342,17 @@ task("task:system-info", "Display comprehensive system information")
       const pendingCount = await intentCollector.getPendingIntentsCount();
       const lastProcessedBatch = await batchProcessor.lastProcessedBatch();
       const automationEnabled = await batchProcessor.automationEnabled();
-      const paused = await batchProcessor.paused();
 
       console.log("├── Current Batch:", batchCounter.toString());
       console.log("├── Pending Intents:", pendingCount.toString());
       console.log("├── Last Processed:", lastProcessedBatch.toString());
-      console.log("├── Automation:", automationEnabled ? "Enabled" : "Disabled");
-      console.log("└── Paused:", paused ? "Yes" : "No");
+      console.log("└── Automation:", automationEnabled ? "Enabled" : "Disabled");
 
-      // Token info
-      console.log("\n🪙 Confidential Token Info:");
-      const tokenName = await confidentialToken.name();
-      const tokenSymbol = await confidentialToken.symbol();
-      const tokenDecimals = await confidentialToken.decimals();
-      const totalSupply = await confidentialToken.totalSupply();
+      // Fund Pool info
+      console.log("\n💰 Fund Pool Info:");
+      const poolBalance = await fundPool.getTotalPoolBalance();
 
-      console.log("├── Name:", tokenName);
-      console.log("├── Symbol:", tokenSymbol);
-      console.log("├── Decimals:", tokenDecimals);
-      console.log("└── Total Supply:", ethers.formatEther(totalSupply));
+      console.log("└── Total Pool Balance:", ethers.formatUnits(poolBalance, 6), "USDC");
 
       // Network info
       console.log("\n🌐 Network Info:");

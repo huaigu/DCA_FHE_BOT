@@ -170,14 +170,30 @@ export function DCAForm() {
         });
 
         toast({
-          title: "Intent Submitted Successfully!",
-          description: `Intent ID: ${result.intentId?.toString() || "Unknown"}`,
+          title: "Intent Submitted Successfully! 🎉",
+          description: `Transaction: ${result.receipt.hash}\nIntent ID: ${result.intentId?.toString() || "Unknown"}`,
         });
       } catch (error) {
         console.error("Failed to submit DCA intent:", error);
+        
+        // Extract more detailed error information
+        let errorMessage = "Unknown error occurred";
+        if (error instanceof Error) {
+          errorMessage = error.message;
+          
+          // Handle specific error types
+          if (error.message.includes("user rejected")) {
+            errorMessage = "Transaction was cancelled by user";
+          } else if (error.message.includes("insufficient funds")) {
+            errorMessage = "Insufficient funds for transaction";
+          } else if (error.message.includes("execution reverted")) {
+            errorMessage = "Transaction failed - check your deposit balance";
+          }
+        }
+        
         toast({
-          title: "Submission Failed",
-          description: error instanceof Error ? error.message : "Unknown error occurred",
+          title: "Submission Failed ❌",
+          description: errorMessage,
           variant: "destructive",
         });
       }
@@ -309,6 +325,25 @@ export function DCAForm() {
 
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Loading Overlay */}
+            {isSubmittingIntent && (
+              <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center">
+                <div className="bg-white rounded-lg p-6 shadow-xl max-w-sm w-full mx-4">
+                  <div className="flex items-center justify-center mb-4">
+                    <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                  </div>
+                  <div className="text-center space-y-2">
+                    <h3 className="font-semibold">Submitting DCA Intent</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Please wait while we encrypt and submit your transaction...
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Do not close this window or refresh the page
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
             {/* Basic Parameters */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -442,11 +477,17 @@ export function DCAForm() {
             </div>
 
             {/* Submit Button */}
-            <Button type="submit" className="w-full" disabled={isSubmittingIntent} size="lg">
+            <Button 
+              type="submit" 
+              className="w-full transition-all duration-300" 
+              disabled={isSubmittingIntent} 
+              size="lg"
+              variant={isSubmittingIntent ? "secondary" : "default"}
+            >
               {isSubmittingIntent ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Submitting to Batch...
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  <span className="animate-pulse">Processing Transaction...</span>
                 </>
               ) : (
                 <>
@@ -471,7 +512,13 @@ export function DCAForm() {
       <DepositModal
         isOpen={showDepositModal}
         onClose={() => setShowDepositModal(false)}
-        onSuccess={() => {
+        onSuccess={async () => {
+          // Refresh balances after successful deposit
+          await Promise.all([
+            refetchFundPoolBalance(),
+            refetchUSDCBalance()
+          ]);
+          
           toast({
             title: "Deposit Successful",
             description: "USDC deposited to FundPool. You can now create DCA intents.",

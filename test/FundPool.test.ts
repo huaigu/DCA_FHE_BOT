@@ -2,14 +2,13 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { FhevmType } from "@fhevm/hardhat-plugin";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { TestFundPool, MockERC20, IntentCollector, TestBatchProcessor, MockWithdrawalGateway } from "../types";
+import { TestFundPool, MockERC20, IntentCollector, TestBatchProcessor } from "../types";
 
 describe("FundPool", function () {
   let fundPool: TestFundPool;
   let mockUSDC: MockERC20;
   let intentCollector: IntentCollector;
   let batchProcessor: TestBatchProcessor;
-  let mockGateway: MockWithdrawalGateway;
   let owner: HardhatEthersSigner;
   let user1: HardhatEthersSigner;
   let user2: HardhatEthersSigner;
@@ -71,15 +70,10 @@ describe("FundPool", function () {
     );
     await batchProcessor.waitForDeployment();
 
-    // Deploy MockWithdrawalGateway
-    const MockWithdrawalGatewayFactory = await ethers.getContractFactory("MockWithdrawalGateway");
-    mockGateway = await MockWithdrawalGatewayFactory.deploy();
-    await mockGateway.waitForDeployment();
 
     // Configure FundPool
     await fundPool.setBatchProcessor(await batchProcessor.getAddress());
     await fundPool.setIntentCollector(await intentCollector.getAddress());
-    await fundPool.setWithdrawalGateway(await mockGateway.getAddress());
 
     // Configure IntentCollector
     await intentCollector.setFundPool(await fundPool.getAddress());
@@ -118,11 +112,7 @@ describe("FundPool", function () {
       expect(await fundPool.intentCollector()).to.equal(newCollector);
     });
 
-    it("Should allow owner to set WithdrawalGateway", async function () {
-      const newGateway = user2.address;
-      await fundPool.setWithdrawalGateway(newGateway);
-      expect(await fundPool.withdrawalGateway()).to.equal(newGateway);
-    });
+    // WithdrawalGateway functionality removed in favor of standard FHEVM decryption
 
     it("Should revert when non-owner tries to set BatchProcessor", async function () {
       await expect(
@@ -187,30 +177,25 @@ describe("FundPool", function () {
     });
 
     it("Should allow users to initiate withdrawal", async function () {
-      // Set mock balance for gateway
-      await mockGateway.setMockBalance(user1.address, ethers.parseUnits("1000", 6));
-      
       // Initiate withdrawal
       await fundPool.connect(user1).initiateWithdrawal();
 
       // Check withdrawal status
       const [pending, requestId] = await fundPool.getWithdrawalStatus(user1.address);
       expect(pending).to.be.true;
-      expect(requestId).to.equal(1);
+      expect(requestId).to.be.greaterThan(0);
     });
 
-    it("Should fulfill withdrawal after gateway decryption", async function () {
+    it("Should fulfill withdrawal after FHEVM decryption callback", async function () {
       const initialBalance = await mockUSDC.balanceOf(user1.address);
       const withdrawAmount = ethers.parseUnits("1000", 6);
       
-      // Set mock balance for gateway
-      await mockGateway.setMockBalance(user1.address, withdrawAmount);
-      
       // Initiate withdrawal
       await fundPool.connect(user1).initiateWithdrawal();
+      const [, requestId] = await fundPool.getWithdrawalStatus(user1.address);
       
-      // Simulate gateway fulfillment
-      await mockGateway.simulateFulfillment(1, await fundPool.getAddress());
+      // Simulate FHEVM decryption callback with empty signatures (mock mode)
+      await fundPool.onWithdrawalDecrypted(requestId, 1000000000n, []); // 1000 USDC in 6 decimals
       
       // Check user received USDC
       expect(await mockUSDC.balanceOf(user1.address)).to.equal(initialBalance + withdrawAmount);
@@ -225,9 +210,6 @@ describe("FundPool", function () {
     });
 
     it("Should cancel withdrawal request", async function () {
-      // Set mock balance for gateway
-      await mockGateway.setMockBalance(user1.address, ethers.parseUnits("1000", 6));
-      
       // Initiate withdrawal
       await fundPool.connect(user1).initiateWithdrawal();
       
@@ -250,9 +232,6 @@ describe("FundPool", function () {
     });
 
     it("Should revert when withdrawal already pending", async function () {
-      // Set mock balance
-      await mockGateway.setMockBalance(user1.address, ethers.parseUnits("1000", 6));
-      
       // Initiate first withdrawal
       await fundPool.connect(user1).initiateWithdrawal();
       
@@ -263,12 +242,10 @@ describe("FundPool", function () {
     });
 
     it("Should check withdrawal cooldown", async function () {
-      // Set mock balance
-      await mockGateway.setMockBalance(user1.address, ethers.parseUnits("500", 6));
-      
       // Complete first withdrawal
       await fundPool.connect(user1).initiateWithdrawal();
-      await mockGateway.simulateFulfillment(1, await fundPool.getAddress());
+      const [, requestId] = await fundPool.getWithdrawalStatus(user1.address);
+      await fundPool.onWithdrawalDecrypted(requestId, 500000000n, []); // 500 USDC
       
       // Try to initiate another withdrawal immediately - should fail due to uninitialized balance
       await expect(
